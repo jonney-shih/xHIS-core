@@ -1,0 +1,16 @@
+{
+  "name": "xhis-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "xHIS-core: static execution core for the extensible Hospital Information System",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
