@@ -547,7 +547,36 @@ signs off on any of this) rather than merely unbuilt.
   or sign-off process for *making* that code change. The TFDA restriction
   says the set must be "known, reviewed, closed"; this only gets the
   "closed" part for free from the code shape. "Reviewed" is still a
-  process someone has to define.
+  process someone has to define. Note this is in better shape than the
+  role-policy question above in one respect — every `PlanProposal` already
+  stamps the `modelVersion`/`promptVersion` that produced it into the
+  `AuditRecord`, so *which version was used* is never ambiguous after the
+  fact. What's still open is everything about *deciding to change* it:
+  - **Who proposes a version bump, and on what basis.** An engineer
+    wanting a newer/cheaper model is a different kind of decision than a
+    prompt wording change made because the current prompt is producing
+    bad plans — the second is closer to a clinical-content change than a
+    code change, and arguably shouldn't be reviewed as just the latter.
+  - **Whether every bump gets the same scrutiny, or only "substantial"
+    ones do.** "Restrictions" above already flags that a proposal
+    materially influencing clinical decisions may need a TFDA SaMD/
+    Clinical Decision Support risk reassessment — real device change-
+    control practice usually distinguishes a minor fix from a change
+    substantial enough to need that reassessment again. Nothing here
+    draws that line for model/prompt changes specifically.
+  - **What "reviewed" actually produces as evidence**, separate from the
+    git commit itself — e.g. whether a version bump requires re-running a
+    fixed set of golden test cases (known goals/contexts with expected or
+    at least acceptable outputs) before it ships, so a prompt or model
+    swap can't silently regress into worse plans or a PII leak that
+    `pdpaRules.ts`'s scan happens not to catch. No such golden set exists
+    today; `tests/agentic/planning/*.test.ts` cover the *mechanism*
+    (parsing, retries, validation), not the *quality* of any specific
+    model/prompt pair's outputs.
+  - **Whether reverting to a previously-used version needs the same
+    review as adopting a new one.** Rolling back to something already
+    reviewed once arguably shouldn't need to restart the whole process,
+    but nothing here says that explicitly, and "arguably" isn't a policy.
 - `patientPromptBuilder` serializes the whole `context.encounters` map
   into the prompt — fine while `PatientContext` only carries IDs and
   timestamps, not fine the moment a richer clinical domain adds anything
