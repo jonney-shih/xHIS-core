@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemoryIdentityProvider } from '../../../src/agentic/identity/inMemoryIdentityProvider.js';
-import { patientApprovalPolicy } from '../../../src/agentic/identity/patient.js';
+import { EXAMPLE_patientApprovalPolicy } from '../../../src/agentic/identity/patient.js';
 import { resolveApprovalForProposal } from '../../../src/agentic/identity/resolveApprovalForProposal.js';
 import type { PlanProposal } from '../../../src/agentic/planning/proposal.js';
 import { patientRiskTiers } from '../../../src/agentic/risk/patient.js';
@@ -45,7 +45,7 @@ describe('resolveApprovalForProposal', () => {
     const result = resolveApprovalForProposal(
       identityProvider,
       patientRiskTiers,
-      patientApprovalPolicy,
+      EXAMPLE_patientApprovalPolicy,
       admitProposal,
       requestFrom('nurse-wu'),
     );
@@ -59,7 +59,7 @@ describe('resolveApprovalForProposal', () => {
     const result = resolveApprovalForProposal(
       identityProvider,
       patientRiskTiers,
-      patientApprovalPolicy,
+      EXAMPLE_patientApprovalPolicy,
       admitProposal,
       requestFrom('nurse-lin'),
     );
@@ -71,7 +71,7 @@ describe('resolveApprovalForProposal', () => {
     const result = resolveApprovalForProposal(
       identityProvider,
       patientRiskTiers,
-      patientApprovalPolicy,
+      EXAMPLE_patientApprovalPolicy,
       dischargeProposal,
       requestFrom('nurse-wu'),
     );
@@ -83,7 +83,7 @@ describe('resolveApprovalForProposal', () => {
     const result = resolveApprovalForProposal(
       identityProvider,
       patientRiskTiers,
-      patientApprovalPolicy,
+      EXAMPLE_patientApprovalPolicy,
       dischargeProposal,
       requestFrom('dr-chen'),
     );

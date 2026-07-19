@@ -195,13 +195,13 @@ closes that gap:
   later and the audit record has to reflect what was true at the time.
 - `ApprovalPolicy` (`approvalPolicy.ts`) maps each `RiskTier` to the roles
   that may resolve a decision at that tier — `patient.ts`'s
-  `patientApprovalPolicy` is a concrete (but illustrative, not
-  authoritative — see below) example: `review-required` accepts a
-  `physician` or `charge-nurse`, `approval-required` needs a `physician`.
-  Unlike `RiskTierRegistry`, this needs no mapped-type-over-generic-key
-  trick and no unsafe cast to build or read — `RiskTier` is already a
-  concrete, non-generic union at the point this type is used, so a plain
-  `Record` already gets full exhaustiveness checking from `tsc`.
+  `EXAMPLE_patientApprovalPolicy` is documentation, not a shippable
+  default (see below): `review-required` accepts a `physician` or
+  `charge-nurse`, `approval-required` needs a `physician`. Unlike
+  `RiskTierRegistry`, this needs no mapped-type-over-generic-key trick and
+  no unsafe cast to build or read — `RiskTier` is already a concrete,
+  non-generic union at the point this type is used, so a plain `Record`
+  already gets full exhaustiveness checking from `tsc`.
 - `resolveApprovalForProposal(identityProvider, riskTierRegistry, policy,
   proposal, request)` composes the three: recomputes the proposal's
   `effectiveTier`, looks up that tier's roles in the policy, and delegates
@@ -211,10 +211,17 @@ closes that gap:
   there's only a per-risk-tier role requirement here, not a per-rule one.
   Still an open question whether that's the right long-term answer.
 
-The role names in `patientApprovalPolicy` are placeholders, not derived
-from any actual hospital credentialing policy — whoever operates this
-system has to replace them with real role names from their own identity
-system before relying on this.
+**xHIS-core ships no production-ready `ApprovalPolicy` for any domain.**
+`EXAMPLE_patientApprovalPolicy`'s `EXAMPLE_` prefix is deliberate — an
+import of it should read as "this is a placeholder" at the call site, not
+as something safe to wire up as-is. Role taxonomies and delegation-of-
+authority rules for clinical orders differ institution to institution
+(and are usually already documented somewhere at each hospital, tied to
+醫療法/醫師法 credentialing rules); xHIS-core has no way to know what a
+given deployment's rules actually are, the same reasoning already applied
+to not picking an LLM vendor or a real persistence backend. Every
+deployment must supply and have reviewed its own `ApprovalPolicy` before
+calling `resolveApprovalForProposal`.
 
 One limitation worth being explicit about: nothing in the type system
 stops code from hand-constructing an `Approval` literal and skipping
@@ -265,6 +272,61 @@ untrusted-planner path, not just the stub:
   `readonly string[]` shape. Returns a `PlanProposal` on the first attempt
   that fully validates, or a `PlanningFailure` (attempt count + last
   feedback) only once every attempt is exhausted — nothing partial.
+
+### Wiring `CompletionFn` against Azure OpenAI (illustrative)
+
+This project already has an Azure enterprise agreement, so a real
+deployment's `CompletionFn` would most likely be backed by Azure OpenAI
+Service rather than a fresh contract with an AI vendor directly — same
+reasoning as "The persistent shell"'s file-vs-database choice, applied to
+procurement instead of storage. This belongs in whichever application
+*calls* `createLlmPlanner`, not in xHIS-core — nothing below becomes a
+dependency of this package, and a raw `fetch` call needs no SDK at all:
+
+```ts
+const completeViaAzureOpenAI: CompletionFn = async (prompt) => {
+  const endpoint = process.env.AZURE_OPENAI_ENDPOINT; // https://<resource>.openai.azure.com
+  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT; // the deployment name, not the model name
+  const apiKey = process.env.AZURE_OPENAI_API_KEY;
+  const apiVersion = '2024-XX-XX'; // pin to one reviewed version — never float to "latest"
+
+  const response = await fetch(
+    `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey! },
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Azure OpenAI request failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = await response.json();
+  return body.choices[0].message.content;
+};
+```
+
+None of this resolves the things that actually gate whether it's safe to
+use — those are still someone's call, not something a code snippet can
+settle:
+
+- **Which Azure region the resource is deployed in**, and whether that
+  satisfies the data-residency question in "Restrictions" above. Azure
+  OpenAI's regional availability changes over time — confirm current
+  availability directly with Azure rather than assuming any specific
+  region is available or sufficient.
+- **Azure OpenAI's own Data Processing Addendum and content/abuse-
+  monitoring terms**, not just whatever general Azure enterprise
+  agreement already covers other services — Azure OpenAI is a distinct
+  product with its own terms addendum, and the general agreement doesn't
+  automatically extend the PDPA-entrustment-contract coverage
+  "Restrictions" above calls for.
+- `apiVersion`/`deployment` are fixed configuration here, not something a
+  caller passes at runtime — same "known, reviewed, closed set"
+  discipline `createLlmPlanner`'s own `modelVersion`/`promptVersion`
+  arguments already hold themselves to.
 
 `tests/agentic/planning/llmPlanningEndToEnd.test.ts` exercises the whole
 chain with a fake model that hallucinates a nonexistent instruction kind on
@@ -412,12 +474,14 @@ signs off on any of this) rather than merely unbuilt.
 
 - `resolveApprovalForProposal()` now binds `Approval.approverId` to a real,
   role-checked identity and derives the required roles from `ApprovalPolicy`
-  keyed by risk tier (see "Identity & permission" above) — but
-  `patientApprovalPolicy`'s role names (`physician`, `charge-nurse`) are
-  placeholders, not sourced from any real hospital credentialing system,
-  and *who is authorized to define or change this policy* is itself
-  undesigned. Today it's just a exported constant anyone with source
-  access can edit — there's no approval process for the approval process.
+  keyed by risk tier (see "Identity & permission" above) — and
+  `EXAMPLE_patientApprovalPolicy` is now clearly named as a placeholder,
+  not a shippable default, since xHIS-core targets multiple hospital
+  deployments and has no way to know any one institution's real
+  credentialing rules. But *who is authorized to define or change a real
+  deployment's policy* is itself still undesigned — there's no approval
+  process for the approval process, just a required, un-defaulted
+  parameter.
 - The policy is keyed by risk tier only, not by *which* verifier produced
   `needs-human-approval` — a batch-size flag and a risk-tier flag both
   require the same roles today. Worth revisiting if a rule ever needs a
@@ -440,11 +504,14 @@ signs off on any of this) rather than merely unbuilt.
   or is `auto` reserved only for instructions with no side effects at all
   (e.g. a future read-only query instruction)? This document assumes the
   latter but doesn't commit any instruction to `auto` yet.
-- The actual LLM vendor is still undecided — `CompletionFn` makes that a
-  runtime injection rather than a code change, but someone still has to
-  pick one, and the PDPA/MOHW-entrustment/DPA/cross-border-transfer
-  questions in "Restrictions" above need answers *before* that pick is
-  wired to real patient context, not after.
+- The platform is leaning Azure OpenAI (existing enterprise agreement —
+  see "Wiring `CompletionFn` against Azure OpenAI" above), but the actual
+  resource region, model deployment, and Azure OpenAI's own Data
+  Processing Addendum review are all still open. `CompletionFn` makes the
+  vendor a runtime injection rather than a code change, but the
+  PDPA/MOHW-entrustment/DPA/cross-border-transfer questions in
+  "Restrictions" above still need answers *before* any pick is wired to
+  real patient context, not after.
 - `modelVersion`/`promptVersion` are constructor arguments to
   `createLlmPlanner`, so a version bump is a code change rather than
   something silently swappable at runtime — but there's no defined review
