@@ -119,9 +119,12 @@ determinism is.
 
 - The **imperative shell** that actually interprets `Effect` values
   (persisting to a database, sending notifications, writing to an audit
-  log) doesn't exist yet. The core is designed with that seam in mind
-  (effects are data precisely so a shell can consume them later), but
-  nothing here performs real I/O.
+  log) still doesn't exist for instructions issued directly by a human —
+  nothing here wires `patientEngine`'s output through one. A first
+  concrete shell exists for the agentic layer's Act stage
+  (`src/agentic/shell/fileShell.ts` — see docs/AGENTIC_LAYER.md), and
+  nothing about `ImperativeShell` cares where a commit came from, so the
+  same shell is reusable once a human-initiated path needs one too.
 - No HTTP/API layer.
 - No clinical domain modeling beyond the two proof-of-concept instructions
   (`AdmitPatient`, `DischargePatient`). Real domains (orders, medications,

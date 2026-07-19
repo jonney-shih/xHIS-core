@@ -159,7 +159,7 @@ the whole batch.
 | **Plan** | `src/agentic/planning/` + `src/agentic/validation/` | LLM proposes `RawPlanOutput` (`instructions: unknown[]`) from goal + minimized context. `toPlanProposal()` runs every candidate through the closed-union validator registry for its domain — a proposal that doesn't validate never becomes a typed `PlanProposal` and never reaches Do. |
 | **Do** | existing `executeSequence` | Dry-run only. No new execution code: handlers are pure, so running a proposal speculatively is already safe. Produces `{context, effects}` or an error — nothing is applied yet. |
 | **Check** | `src/agentic/verification/` | `combineVerifiers()` folds several `Verifier`s over the `PlanProposal` into one `VerifyDecision` by severity (`reject` > `needs-human-approval` > `accept`) — see `patient.ts` for the assembled example: a PDPA rationale scan, a batch-size business rule, and the risk-tier lookup. Any verifier in the combination can only ever *raise* the outcome, never lower it. A handler-raised business-rule error from Do is still a separate, harder guard enforced at Act, not here — see that row. |
-| **Act** | `src/agentic/shell/` (`act()`, against an `ImperativeShell`) | Commits effects only on `accept`, or on `needs-human-approval` once an `Approval` is attached — never on `reject`, never while approval is still pending, never when Do itself failed. An `Approval` only exists once `src/agentic/identity/resolveApproval.ts` has bound the raw claim to a real, permission-checked identity — see "Identity & permission" below. Regardless of outcome, writes exactly one `AuditRecord`: the proposal (rationale, model/prompt version), Check's decision, the commit outcome, and the verified approver if any. |
+| **Act** | `src/agentic/shell/` (`act()`, against an `ImperativeShell`) | Commits effects only on `accept`, or on `needs-human-approval` once an `Approval` is attached — never on `reject`, never while approval is still pending, never when Do itself failed. An `Approval` only exists once `src/agentic/identity/resolveApproval.ts` has bound the raw claim to a real, permission-checked identity — see "Identity & permission" below. Regardless of outcome, writes exactly one `AuditRecord`: the proposal (rationale, model/prompt version), Check's decision, the commit outcome, and the verified approver if any. Committed for real, on disk, by `createFileShell` — see "The persistent shell" below. |
 
 ```
 Plan  --RawPlanOutput--> validateInstructions --> PlanProposal | rejected
@@ -274,6 +274,41 @@ loop the intent/scope conversation that started this document was about,
 now actually wired end to end, with every step in between still fully
 deterministic and type-checked.
 
+## The persistent shell
+
+`createInMemoryShell` was always a test double. `src/agentic/shell/
+fileShell.ts`'s `createFileShell` is a real one: two append-only JSON
+Lines files (`commitsFile`, `auditFile`), written with `appendFileSync`.
+This is the first place this codebase reads or writes an actual file, and
+the first (dev-only) dependency it's ever added — `@types/node`, for
+`node:fs`/`node:path`'s type declarations; there is still no *runtime*
+dependency anywhere in `package.json`.
+
+It's deliberately the simplest thing that's actually durable, not a
+production-grade store — picking a real database was a bigger, more
+specific commitment (which product, what schema, what ops burden) than
+this codebase should make on a project's behalf, the same reasoning
+behind not picking an LLM vendor or inventing a real role taxonomy. Three
+things follow directly from the JSON Lines shape:
+
+- Each `commit()` line already carries the *full* post-transition context
+  (not a diff), so `readLatestContext()` just needs the last line — there
+  is no separate snapshot file to keep in sync with the log.
+- Reading is all-or-nothing per line: a line that fails `JSON.parse`
+  throws rather than being silently skipped. Quietly dropping a
+  corrupted audit record would be a worse failure than a loud crash, for
+  something whose entire purpose is being a trustworthy trail.
+- Writing is synchronous (`appendFileSync`), matching `ImperativeShell`'s
+  synchronous `commit`/`recordAudit` signatures, and relies on a single
+  `write()` syscall being atomic for data this size — there's no WAL,
+  fsync tuning, or journaling story here.
+
+What it explicitly does **not** provide — a real deployment has to layer
+these on separately: retention/rotation (MOHW's multi-year, sometimes
+indefinite, medical-record retention rules aren't encoded in a file
+format), backup, encryption at rest, or safety against two processes
+appending to the same files concurrently.
+
 ## Proposed layout
 
 ```
@@ -342,6 +377,10 @@ how `src/instructions/patient/**` is domain-specific while
    `planWithRetries()` (drives up to N attempts, feeding each attempt's
    parse/validation problems back as `feedback` for the next). See
    "The LLM planner" above.
+10. `src/agentic/shell/fileShell.ts`: `createFileShell()`, a real (not
+    in-memory) `ImperativeShell` backed by two append-only JSON Lines
+    files, plus `readCommits()`/`readAuditLog()`/`readLatestContext()` to
+    read them back. See "The persistent shell" above.
 
 This gets a real Plan→Do→Check→Act path running end to end, entirely
 deterministic except for the one call to `CompletionFn` that Plan itself
@@ -359,9 +398,15 @@ holding none of the required roles, any-of-several-roles, fail-closed on an
 empty role list, the tier-driven policy giving `AdmitPatient` and
 `DischargePatient` different acceptable roles, and — in
 `approvalFlow.test.ts` — the full composition with `act()`, including an
-impersonation attempt that never produces an `Approval` at all). Still not
-done: a real (persistent) shell in place of the in-memory one, and an
-actual LLM vendor decision — see the new open questions below.
+impersonation attempt that never produces an `Approval` at all), and
+`tests/agentic/shell/fileShell*.test.ts`'s (persistence across reads,
+ordering, directory creation, empty-file handling, throwing on a
+corrupted line, and `act()` running against the file shell exactly the
+way it runs against the in-memory one). Every item originally listed in
+this document as "still not done" is now implemented — see the new open
+questions below for what remains genuinely undecided (an actual LLM
+vendor, the file shell's retention/backup/concurrency story, and who
+signs off on any of this) rather than merely unbuilt.
 
 ## Open questions for review
 
@@ -382,9 +427,15 @@ actual LLM vendor decision — see the new open questions below.
   approval at all, precisely to avoid this case).
 - Does the audit record for agentic proposals live in the same store as
   effects from human-initiated instructions, or a separate one that's
-  cross-referenced? `createInMemoryShell` doesn't answer this — it's a test
-  double, not a design for the real store. Affects how "one audit trail"
-  claims hold up under an MOHW review.
+  cross-referenced? `createFileShell` doesn't resolve this — it's a
+  reference implementation for the agentic layer specifically, not a
+  design for where the *whole* system's audit trail lives. Affects how
+  "one audit trail" claims hold up under an MOHW review.
+- `createFileShell` has no retention/rotation, backup, encryption-at-rest,
+  or multi-writer story (see "The persistent shell" above) — all
+  operational decisions a real deployment has to make, not something this
+  reference implementation should guess at. Someone still has to decide
+  where these files actually live and who's responsible for them.
 - Should `auto`-tier proposals still require *any* rule to pass before Act,
   or is `auto` reserved only for instructions with no side effects at all
   (e.g. a future read-only query instruction)? This document assumes the
