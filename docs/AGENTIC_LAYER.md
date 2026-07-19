@@ -481,7 +481,36 @@ signs off on any of this) rather than merely unbuilt.
   credentialing rules. But *who is authorized to define or change a real
   deployment's policy* is itself still undesigned — there's no approval
   process for the approval process, just a required, un-defaulted
-  parameter.
+  parameter. This isn't xHIS-core's call to make, but a real process would
+  at minimum need to answer:
+  - **Who drafts it.** Presumably IT/informatics, transcribing an
+    institution's *existing* medical-order delegation-of-authority
+    document (most accredited hospitals already have one, tied to
+    醫療法/醫師法 credentialing) into `ApprovalPolicy`'s shape — not
+    inventing role names from scratch the way
+    `EXAMPLE_patientApprovalPolicy` does.
+  - **Who signs off before it takes effect.** A code change to
+    `ApprovalPolicy` today only goes through whatever ordinary PR review
+    the engineering team uses — the same review a typo fix gets. Whether
+    this specific kind of change needs a distinct, named clinical/
+    compliance approver (medical affairs, nursing leadership, whichever
+    body actually owns delegation-of-authority policy at a given
+    institution — often a 醫療品質/病歷委員會 or equivalent) before merge
+    is undecided.
+  - **How a change is recorded for audit, not just version control.** A
+    git commit says *what* changed and *who committed it*, but not "this
+    policy version was clinically approved, by whom, effective when" —
+    the kind of record an MOHW review would actually expect. Nothing
+    here proposes what that record should look like.
+  - **Whether `AuditRecord` needs its own policy version stamp.**
+    `ApprovalPolicy` can change over time, but `AuditRecord` doesn't
+    capture *which version was in effect* when a given `Approval` was
+    resolved — so re-reviewing an old audit record later, there's no way
+    to tell whether the approver's role was sufficient under the policy
+    that actually governed it then, versus whatever the policy has since
+    become. This is the same "known, reviewed, closed set" discipline
+    `modelVersion`/`promptVersion` already get; the role policy doesn't
+    have an equivalent yet.
 - The policy is keyed by risk tier only, not by *which* verifier produced
   `needs-human-approval` — a batch-size flag and a risk-tier flag both
   require the same roles today. Worth revisiting if a rule ever needs a
