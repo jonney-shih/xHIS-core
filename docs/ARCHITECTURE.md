@@ -68,9 +68,11 @@ followed:
    plain string-indexed `Record`; only then does indexing by the key
    typecheck. This is safe in practice (property lookup by an exact string
    key is precise, and the registry is proven total at construction), just
-   not something `tsc` itself can verify. The two sanctioned sites today are
-   `engine.ts`'s `execute()` (dispatching a handler) and
-   `agentic/risk/tiers.ts`'s `effectiveTier()` (looking up a risk tier) — see
+   not something `tsc` itself can verify. The three sanctioned sites today
+   are `engine.ts`'s `execute()` (dispatching a handler),
+   `agentic/risk/tiers.ts`'s `effectiveTier()` (looking up a risk tier), and
+   `agentic/validation/validator.ts`'s `validateInstruction()` (looking up
+   the validator for an untrusted candidate's claimed `kind`) — see
    docs/AGENTIC_LAYER.md. Do not add a cast of a different shape than this
    one; route new "look up something keyed by an instruction's `kind`" needs
    through this same pattern.

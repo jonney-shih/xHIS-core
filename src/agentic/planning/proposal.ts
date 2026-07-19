@@ -17,7 +17,8 @@ export interface PlanningGoal {
  * A real (LLM-backed) planner's raw output is untrusted text/JSON; it must
  * be validated against the closed `Instruction` union *before* a
  * `PlanProposal` is constructed. This type is downstream of that gate, not
- * a substitute for it.
+ * a substitute for it — see `toPlanProposal.ts`, the only sanctioned way to
+ * construct one from untrusted input.
  */
 export interface PlanProposal<TInstruction extends Kinded> {
   readonly instructions: readonly TInstruction[];

@@ -66,9 +66,32 @@ core exists to serve.
 
 - Context handed to the LLM during Plan must be minimized/de-identified to
   what planning actually requires — never the full record by default.
-- If a third-party LLM API is used, personal data transmission requires a
-  documented legal basis and a data processing agreement with the vendor.
-  This layer must not assume any specific vendor is pre-cleared.
+- If a third-party LLM API is used, personal data transmission requires an
+  entrustment contract that satisfies PDPA Enforcement Rules Article 8
+  (個人資料保護法施行細則第 8 條) — scope, purpose, retention/destruction, and
+  supervision terms. A vendor's generic Data Processing Agreement (DPA)
+  overlaps with this but is not automatically the same thing; satisfying
+  one doesn't imply satisfying the other.
+- A vendor-offered U.S. HIPAA Business Associate Agreement (BAA), where
+  available, is not a substitute for the above — Taiwan has no BAA concept.
+  Treat it as a security-posture signal from the vendor, nothing more.
+- Because this is medical record data, the entrustment contract likely also
+  has to satisfy MOHW's 醫療機構電子病歷製作及管理辦法 ("Regulations Governing
+  the Creation and Management of Electronic Medical Records by Medical
+  Institutions," law code L0020121 — no official English translation
+  exists; that rendering is common law-firm usage, not government-
+  certified). Its 2022 amendment requires a written contract plus vendor
+  cybersecurity-standard verification for anyone entrusted with deploying
+  or managing an EMR system, and expects cloud-stored data to stay within
+  Taiwan's territory — a separate, healthcare-specific bar on top of the
+  general PDPA entrustment requirement above.
+- Cross-border transfer of even minimized context to an overseas LLM API
+  may be subject to a PDPA Article 21 restriction order for this data
+  category. Unconfirmed as of this writing — needs a legal check before any
+  vendor is finalized, not an assumption baked into this design.
+- This layer must not assume any specific vendor is pre-cleared on any of
+  the above. None of this is legal advice; route the actual vendor decision
+  through counsel/DPO before Plan is ever wired to a real LLM.
 - Every Plan output retains its rationale (why the agent proposed this
   sequence) as a durable, replayable record — the same discipline the core
   already applies to effects, extended to *why*, not just *what*.
@@ -133,13 +156,13 @@ the whole batch.
 
 | PDCA | Module | What happens |
 |---|---|---|
-| **Plan** | `src/agentic/planning/` | LLM proposes `Instruction[]` from goal + minimized context. Raw output is untrusted text/JSON until it passes runtime validation against the closed `Instruction` union — a proposal that doesn't validate never becomes a typed `PlanProposal` and never reaches Do. |
+| **Plan** | `src/agentic/planning/` + `src/agentic/validation/` | LLM proposes `RawPlanOutput` (`instructions: unknown[]`) from goal + minimized context. `toPlanProposal()` runs every candidate through the closed-union validator registry for its domain — a proposal that doesn't validate never becomes a typed `PlanProposal` and never reaches Do. |
 | **Do** | existing `executeSequence` | Dry-run only. No new execution code: handlers are pure, so running a proposal speculatively is already safe. Produces `{context, effects}` or an error — nothing is applied yet. |
 | **Check** | `src/agentic/verification/` | Runs business rules (including whatever error the handler itself would raise), data-handling rules (PDPA minimization actually respected), and a risk-tier lookup. Outcome is `accept`, `reject`, or `needs-human-approval`. Risk tier can only ever *raise* the outcome toward requiring approval, never lower it. |
-| **Act** | `src/agentic/shell/` (the imperative shell `ARCHITECTURE.md` flags as not yet built) | Commits effects only on `accept` (or after human approval), and — regardless of outcome — writes one audit record: rationale, model/prompt version, Check result, approver identity if any. Nothing is applied on reject, mirroring the existing all-or-nothing batch contract. |
+| **Act** | `src/agentic/shell/` (`act()`, against an `ImperativeShell`) | Commits effects only on `accept`, or on `needs-human-approval` once an `Approval` is attached — never on `reject`, never while approval is still pending, never when Do itself failed. Regardless of outcome, writes exactly one `AuditRecord`: the proposal (rationale, model/prompt version), Check's decision, the commit outcome, and the approver if any. |
 
 ```
-Plan  --PlanProposal (untyped until validated)-->
+Plan  --RawPlanOutput--> validateInstructions --> PlanProposal | rejected
 Do    --executeSequence (dry run, pure)-->  {context, effects} | error
 Check --risk tier + rules-->  accept | reject | needs-human-approval
 Act   --only on accept/approved-->  commit effects + write audit record
@@ -150,6 +173,7 @@ Act   --only on accept/approved-->  commit effects + write audit record
 ```
 src/agentic/
   planning/       Plan — the only place non-determinism is allowed
+  validation/     the untrusted-input gate — closed-union validators, one per domain
   risk/           RiskTierRegistry, one per domain instruction union
   verification/   Check — rules engine + risk-tier lookup
   shell/          Act — first concrete use of the "imperative shell" seam
@@ -160,7 +184,7 @@ tier registry and, if its planning needs differ, its own planner — mirroring
 how `src/instructions/patient/**` is domain-specific while
 `src/core/execution/**` stays domain-agnostic.
 
-## Suggested minimal first slice
+## Minimal vertical slice — implemented
 
 1. `RiskTier` / `RiskTierRegistry` types + `patientRiskTiers` (compiles,
    no runtime behavior yet).
@@ -173,21 +197,42 @@ how `src/instructions/patient/**` is domain-specific while
 4. An `__typetests__/exhaustiveness.ts` for `patientRiskTiers`, same pattern
    as the handler registry's, so the risk tier guarantee is proven the same
    way the dispatch guarantee is.
+5. `act()` (`src/agentic/shell/act.ts`), the `ImperativeShell` interface it
+   commits through, and `createInMemoryShell` — an in-memory stand-in for a
+   real shell, so Act's decision logic (commit vs. reject vs. await
+   approval) is exercised end to end in tests without a database.
+6. `src/agentic/validation/`: an `InstructionValidatorRegistry` (the same
+   totality trick as `HandlerRegistry` and `RiskTierRegistry`, a third time
+   — see docs/ARCHITECTURE.md), `patientInstructionValidators`, and
+   `toPlanProposal()`, which is now the *only* way a `PlanProposal` gets
+   constructed from something that isn't already known-good TypeScript.
+   Rejects unknown `kind`s, non-object candidates, and per-field shape
+   problems, and reports every issue found across a batch rather than just
+   the first.
 
-This gets a real Plan→Do→Check→Act path end to end, entirely deterministic,
-before introducing the one genuinely non-deterministic component (the LLM
-planner itself).
+This gets a real Plan→Do→Check→Act path running end to end, entirely
+deterministic, against `tests/agentic/shell/act.test.ts`'s scenarios
+(accept, reject, awaiting approval, approved, declined, Do itself failing)
+and `tests/agentic/planning/toPlanProposal.test.ts`'s (valid batch,
+hallucinated field, hallucinated instruction kind entirely). Still not
+done: a real (persistent) shell in place of the in-memory one, business/
+PDPA rules in Check beyond risk tier, and the one genuinely non-
+deterministic component — the LLM planner itself, which can now be wired
+in behind `toPlanProposal()` without this layer's safety gate depending on
+the LLM ever being trustworthy.
 
 ## Open questions for review
 
 - Who is the "approver" for `needs-human-approval` in practice — a
-  clinician, a specific role, anyone with a permission? This layer assumes
-  an identity exists to attach to the audit record; it doesn't design that
-  identity/permission system.
+  clinician, a specific role, anyone with a permission? `Approval.approverId`
+  is currently just a free-form string; nothing checks that the ID is real,
+  authorized, or even the same person the proposal was routed to. This layer
+  doesn't design that identity/permission system.
 - Does the audit record for agentic proposals live in the same store as
   effects from human-initiated instructions, or a separate one that's
-  cross-referenced? Affects how "one audit trail" claims hold up under an
-  MOHW review.
+  cross-referenced? `createInMemoryShell` doesn't answer this — it's a test
+  double, not a design for the real store. Affects how "one audit trail"
+  claims hold up under an MOHW review.
 - Should `auto`-tier proposals still require *any* rule to pass before Act,
   or is `auto` reserved only for instructions with no side effects at all
   (e.g. a future read-only query instruction)? This document assumes the
