@@ -158,7 +158,7 @@ the whole batch.
 |---|---|---|
 | **Plan** | `src/agentic/planning/` + `src/agentic/validation/` | LLM proposes `RawPlanOutput` (`instructions: unknown[]`) from goal + minimized context. `toPlanProposal()` runs every candidate through the closed-union validator registry for its domain — a proposal that doesn't validate never becomes a typed `PlanProposal` and never reaches Do. |
 | **Do** | existing `executeSequence` | Dry-run only. No new execution code: handlers are pure, so running a proposal speculatively is already safe. Produces `{context, effects}` or an error — nothing is applied yet. |
-| **Check** | `src/agentic/verification/` | Runs business rules (including whatever error the handler itself would raise), data-handling rules (PDPA minimization actually respected), and a risk-tier lookup. Outcome is `accept`, `reject`, or `needs-human-approval`. Risk tier can only ever *raise* the outcome toward requiring approval, never lower it. |
+| **Check** | `src/agentic/verification/` | `combineVerifiers()` folds several `Verifier`s over the `PlanProposal` into one `VerifyDecision` by severity (`reject` > `needs-human-approval` > `accept`) — see `patient.ts` for the assembled example: a PDPA rationale scan, a batch-size business rule, and the risk-tier lookup. Any verifier in the combination can only ever *raise* the outcome, never lower it. A handler-raised business-rule error from Do is still a separate, harder guard enforced at Act, not here — see that row. |
 | **Act** | `src/agentic/shell/` (`act()`, against an `ImperativeShell`) | Commits effects only on `accept`, or on `needs-human-approval` once an `Approval` is attached — never on `reject`, never while approval is still pending, never when Do itself failed. Regardless of outcome, writes exactly one `AuditRecord`: the proposal (rationale, model/prompt version), Check's decision, the commit outcome, and the approver if any. |
 
 ```
@@ -191,9 +191,8 @@ how `src/instructions/patient/**` is domain-specific while
 2. `PlanProposal<TInstruction>` type + a hand-written (non-LLM) planner
    stub that returns a fixed proposal, so Do/Check/Act can be built and
    tested against something deterministic before any LLM is wired in.
-3. A `Verifier` that only implements the risk-tier lookup (no business/PDPA
-   rules yet) and always returns `needs-human-approval` for anything above
-   `auto`.
+3. A `Verifier` that implements the risk-tier lookup and always returns
+   `needs-human-approval` for anything above `auto`.
 4. An `__typetests__/exhaustiveness.ts` for `patientRiskTiers`, same pattern
    as the handler registry's, so the risk tier guarantee is proven the same
    way the dispatch guarantee is.
@@ -209,17 +208,32 @@ how `src/instructions/patient/**` is domain-specific while
    Rejects unknown `kind`s, non-object candidates, and per-field shape
    problems, and reports every issue found across a batch rather than just
    the first.
+7. `combineVerifiers()` (severity-ordered merge of any number of
+   `Verifier`s, with reasons concatenated on a tie) plus two concrete rules:
+   `createMaxBatchSizeVerifier()` (a business rule Do can't express — batch
+   size is a property of the whole proposal, not any one instruction) and
+   `createRationalePiiScanVerifier()` (a PDPA rule: heuristically rejects a
+   proposal whose free-text `rationale` looks like it contains a Taiwan
+   National ID or mobile number — `instructions` is already schema-
+   constrained by the validator, so `rationale` is the one field an LLM
+   could otherwise leak raw identifiers through into a persisted audit
+   record). `patient.ts` assembles all three (PDPA scan, batch size, risk
+   tier) into `patientVerifier`, the Check a real Plan/Do/Act wiring would
+   actually use for this domain.
 
 This gets a real Plan→Do→Check→Act path running end to end, entirely
 deterministic, against `tests/agentic/shell/act.test.ts`'s scenarios
 (accept, reject, awaiting approval, approved, declined, Do itself failing)
 and `tests/agentic/planning/toPlanProposal.test.ts`'s (valid batch,
-hallucinated field, hallucinated instruction kind entirely). Still not
-done: a real (persistent) shell in place of the in-memory one, business/
-PDPA rules in Check beyond risk tier, and the one genuinely non-
-deterministic component — the LLM planner itself, which can now be wired
-in behind `toPlanProposal()` without this layer's safety gate depending on
-the LLM ever being trustworthy.
+hallucinated field, hallucinated instruction kind entirely), plus
+`tests/agentic/verification/*.test.ts`'s (merge semantics, batch-size
+threshold, PII-shaped rationale, and the assembled `patientVerifier`
+letting a PDPA rejection override what risk tier alone would only send to
+human approval). Still not done: a real (persistent) shell in place of the
+in-memory one, an identity/permission system behind `Approval.approverId`,
+and the one genuinely non-deterministic component — the LLM planner
+itself, which can now be wired in behind `toPlanProposal()` without this
+layer's safety gate depending on the LLM ever being trustworthy.
 
 ## Open questions for review
 
