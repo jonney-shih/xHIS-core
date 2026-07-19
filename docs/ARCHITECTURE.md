@@ -58,14 +58,22 @@ followed:
    *bivariantly* (weaker), while `{ Kind: (ctx, i) => {...} }` gets full
    *contravariant* checking. A wrong-shaped handler can slip past the
    bivariant check unnoticed.
-3. **There is exactly one unsafe cast in the whole codebase**, in
-   `engine.ts`'s `execute()`. TypeScript cannot correlate a union-valued key
-   (`instruction.kind`) with the specific union member that key came from —
-   a known limitation, not a bug — so the dispatch line casts past it. This
-   is safe in practice (property lookup by an exact string key is precise,
-   and the registry is proven total at construction), just not something
-   `tsc` itself can verify. Do not add a second cast like this anywhere
-   else; route new dispatch needs through `createEngine`.
+3. **Every unsafe cast in this codebase follows the same, narrow pattern**:
+   indexing a mapped type keyed by a still-generic `TInstruction['kind']`
+   (e.g. `HandlerRegistry`) by a value of that same generic key type.
+   TypeScript does not synthesize an index signature for a mapped type over
+   an unresolved generic key, so the indexing expression itself has no
+   valid type — not even `unknown` — regardless of what the *result* is
+   cast to afterward. The fix is to cast the registry itself, first, to a
+   plain string-indexed `Record`; only then does indexing by the key
+   typecheck. This is safe in practice (property lookup by an exact string
+   key is precise, and the registry is proven total at construction), just
+   not something `tsc` itself can verify. The two sanctioned sites today are
+   `engine.ts`'s `execute()` (dispatching a handler) and
+   `agentic/risk/tiers.ts`'s `effectiveTier()` (looking up a risk tier) — see
+   docs/AGENTIC_LAYER.md. Do not add a cast of a different shape than this
+   one; route new "look up something keyed by an instruction's `kind`" needs
+   through this same pattern.
 4. **The real exhaustiveness proof lives in a `__typetests__` file**, not in
    prose. `src/instructions/patient/handlers/__typetests__/exhaustiveness.ts`
    builds a registry with a handler intentionally omitted, guarded by

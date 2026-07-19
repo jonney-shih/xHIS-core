@@ -23,17 +23,25 @@ export function createEngine<TCtx, TInstruction extends Kinded, TEffect, TError>
     ctx: TCtx,
     instruction: TInstruction,
   ): Result<ExecutionOutcome<TCtx, TEffect>, TError> {
-    // Sanctioned unsafe cast — the ONE place in this codebase that casts past
-    // TypeScript's "correlated union" limitation: it cannot narrow a
-    // union-valued key (`instruction.kind`) together with the union member
-    // (`instruction`) that key came from, so the property lookup below types
-    // as a union of handlers rather than the one matching handler. This is
-    // safe in practice, not just asserted: JS property access by an exact
-    // string key is precise, and `registry` is proven total over every
-    // instruction kind at construction time (see HandlerRegistry). Do not
-    // add another cast like this anywhere else — route new dispatch needs
-    // through this function instead.
-    const handler = registry[instruction.kind] as Handler<TCtx, TInstruction, TEffect, TError>;
+    // Sanctioned unsafe cast — see docs/ARCHITECTURE.md for the general
+    // rule this follows. `HandlerRegistry` is a mapped type keyed by the
+    // still-generic `TInstruction['kind']`; TypeScript does not synthesize
+    // an index signature for a mapped type over an unresolved generic key,
+    // so `registry[instruction.kind]` has no valid index access at all —
+    // not even to `unknown` — regardless of what the result is cast to
+    // afterward. The fix is to cast `registry` itself, first, to a plain
+    // string-indexed record; only then does indexing by `instruction.kind`
+    // typecheck, and it already produces the correlated `Handler` type
+    // without a second cast on the result. This is safe in practice, not
+    // just asserted: JS property access by an exact string key is precise,
+    // and `registry` is proven total over every instruction kind at
+    // construction time (see HandlerRegistry). Do not add another cast like
+    // this anywhere else — route new dispatch needs through this function
+    // instead.
+    const byKind = registry as unknown as Readonly<
+      Record<string, Handler<TCtx, TInstruction, TEffect, TError>>
+    >;
+    const handler = byKind[instruction.kind]!;
     return handler(ctx, instruction);
   }
 
