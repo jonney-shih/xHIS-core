@@ -12,7 +12,11 @@ export interface ActInput<TCtx, TInstruction extends Kinded, TEffect, TError> {
   /** Do's result — typically `engine.executeSequence(context, proposal.instructions)`. */
   readonly doOutcome: Result<ExecutionOutcome<TCtx, TEffect>, SequenceFailure<TCtx, TEffect, TError>>;
   readonly decision: VerifyDecision;
-  /** Present only once a human has resolved a `needs-human-approval` decision. */
+  /**
+   * Present only once a human has resolved a `needs-human-approval`
+   * decision *and* their identity/permission has been verified — construct
+   * this via `agentic/identity/resolveApproval.ts`, never by hand.
+   */
   readonly approval?: Approval;
   readonly recordedAt: string;
 }

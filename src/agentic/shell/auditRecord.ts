@@ -11,9 +11,20 @@ import type { VerifyDecision } from '../verification/verifier.js';
  */
 export type CommitOutcome = 'committed' | 'rejected' | 'awaiting-approval';
 
-/** A human's resolution of a `needs-human-approval` decision. */
+/**
+ * A human's resolution of a `needs-human-approval` decision, already bound
+ * to a real, permission-checked identity — see
+ * `agentic/identity/resolveApproval.ts`, the only sanctioned way to produce
+ * one of these. `approverId` is the identity provider's canonical ID for
+ * that identity, not necessarily whatever string a caller originally
+ * claimed. `approverRole` is the specific role that was checked and passed
+ * at the moment of decision — recorded here, not just on the identity,
+ * because roles can change later and the audit record must reflect what
+ * permission actually authorized this decision at the time.
+ */
 export interface Approval {
   readonly approverId: string;
+  readonly approverRole: string;
   readonly approved: boolean;
   readonly decidedAt: string;
 }

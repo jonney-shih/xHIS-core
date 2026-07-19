@@ -159,7 +159,7 @@ the whole batch.
 | **Plan** | `src/agentic/planning/` + `src/agentic/validation/` | LLM proposes `RawPlanOutput` (`instructions: unknown[]`) from goal + minimized context. `toPlanProposal()` runs every candidate through the closed-union validator registry for its domain — a proposal that doesn't validate never becomes a typed `PlanProposal` and never reaches Do. |
 | **Do** | existing `executeSequence` | Dry-run only. No new execution code: handlers are pure, so running a proposal speculatively is already safe. Produces `{context, effects}` or an error — nothing is applied yet. |
 | **Check** | `src/agentic/verification/` | `combineVerifiers()` folds several `Verifier`s over the `PlanProposal` into one `VerifyDecision` by severity (`reject` > `needs-human-approval` > `accept`) — see `patient.ts` for the assembled example: a PDPA rationale scan, a batch-size business rule, and the risk-tier lookup. Any verifier in the combination can only ever *raise* the outcome, never lower it. A handler-raised business-rule error from Do is still a separate, harder guard enforced at Act, not here — see that row. |
-| **Act** | `src/agentic/shell/` (`act()`, against an `ImperativeShell`) | Commits effects only on `accept`, or on `needs-human-approval` once an `Approval` is attached — never on `reject`, never while approval is still pending, never when Do itself failed. Regardless of outcome, writes exactly one `AuditRecord`: the proposal (rationale, model/prompt version), Check's decision, the commit outcome, and the approver if any. |
+| **Act** | `src/agentic/shell/` (`act()`, against an `ImperativeShell`) | Commits effects only on `accept`, or on `needs-human-approval` once an `Approval` is attached — never on `reject`, never while approval is still pending, never when Do itself failed. An `Approval` only exists once `src/agentic/identity/resolveApproval.ts` has bound the raw claim to a real, permission-checked identity — see "Identity & permission" below. Regardless of outcome, writes exactly one `AuditRecord`: the proposal (rationale, model/prompt version), Check's decision, the commit outcome, and the verified approver if any. |
 
 ```
 Plan  --RawPlanOutput--> validateInstructions --> PlanProposal | rejected
@@ -167,6 +167,62 @@ Do    --executeSequence (dry run, pure)-->  {context, effects} | error
 Check --risk tier + rules-->  accept | reject | needs-human-approval
 Act   --only on accept/approved-->  commit effects + write audit record
 ```
+
+## Identity & permission
+
+`act()` takes an `Approval` — but `Approval.approverId` used to be nothing
+more than a string a caller could set to anything. There was no check that
+the ID was real, that whoever submitted it actually held it, or that they
+were allowed to approve this kind of decision. `src/agentic/identity/`
+closes that gap:
+
+- `IdentityProvider.resolve(id)` — the seam a real identity system (SSO, an
+  LDAP/AD directory, a hospital staff registry, ...) would implement.
+  `createInMemoryIdentityProvider()` is a fixed-directory stand-in for
+  tests, the same role `createInMemoryShell` plays for Act.
+- `resolveApproval(identityProvider, requiredRoles, request)` — the only
+  sanctioned way to turn a raw `ApprovalRequest` (an unverified claim) into
+  an `Approval` that `act()` will honor. It resolves the claimed
+  `approverId` against the provider and checks the resolved identity holds
+  *any one* of `requiredRoles`, for *both* an approval and a decline — an
+  unauthenticated "no" can block a legitimate action just as easily as an
+  unauthenticated "yes" can force one through, so both need the same check.
+  An empty `requiredRoles` fails closed (nobody is authorized), not open.
+- The resulting `Approval` records the identity provider's *canonical* ID
+  (not whatever string the raw request happened to use) and the *specific*
+  role that matched (not the whole acceptable list) — a snapshot of what
+  permission actually authorized the decision, since roles can change
+  later and the audit record has to reflect what was true at the time.
+- `ApprovalPolicy` (`approvalPolicy.ts`) maps each `RiskTier` to the roles
+  that may resolve a decision at that tier — `patient.ts`'s
+  `patientApprovalPolicy` is a concrete (but illustrative, not
+  authoritative — see below) example: `review-required` accepts a
+  `physician` or `charge-nurse`, `approval-required` needs a `physician`.
+  Unlike `RiskTierRegistry`, this needs no mapped-type-over-generic-key
+  trick and no unsafe cast to build or read — `RiskTier` is already a
+  concrete, non-generic union at the point this type is used, so a plain
+  `Record` already gets full exhaustiveness checking from `tsc`.
+- `resolveApprovalForProposal(identityProvider, riskTierRegistry, policy,
+  proposal, request)` composes the three: recomputes the proposal's
+  `effectiveTier`, looks up that tier's roles in the policy, and delegates
+  to `resolveApproval`. It's keyed off the proposal's risk tier alone, not
+  off *which* verifier actually produced `needs-human-approval` — a
+  batch-size rule and a risk-tier rule can both produce that decision, but
+  there's only a per-risk-tier role requirement here, not a per-rule one.
+  Still an open question whether that's the right long-term answer.
+
+The role names in `patientApprovalPolicy` are placeholders, not derived
+from any actual hospital credentialing policy — whoever operates this
+system has to replace them with real role names from their own identity
+system before relying on this.
+
+One limitation worth being explicit about: nothing in the type system
+stops code from hand-constructing an `Approval` literal and skipping
+`resolveApproval` entirely — same as the "outer shell may only apply
+effects when `executeSequence` returns `ok`" rule in docs/ARCHITECTURE.md,
+this is a convention enforced by review and tests
+(`tests/agentic/identity/approvalFlow.test.ts`), not something `tsc` can
+check for you.
 
 ## Proposed layout
 
@@ -176,6 +232,7 @@ src/agentic/
   validation/     the untrusted-input gate — closed-union validators, one per domain
   risk/           RiskTierRegistry, one per domain instruction union
   verification/   Check — rules engine + risk-tier lookup
+  identity/       binds a raw approval claim to a real, permission-checked identity
   shell/          Act — first concrete use of the "imperative shell" seam
 ```
 
@@ -220,28 +277,51 @@ how `src/instructions/patient/**` is domain-specific while
    record). `patient.ts` assembles all three (PDPA scan, batch size, risk
    tier) into `patientVerifier`, the Check a real Plan/Do/Act wiring would
    actually use for this domain.
+8. `src/agentic/identity/`: `IdentityProvider` + `createInMemoryIdentityProvider`,
+   `resolveApproval()` — the only sanctioned way to turn a raw
+   `ApprovalRequest` into an `Approval`, binding `approverId` to a real,
+   role-checked identity instead of trusting whatever string a caller
+   supplies — plus `ApprovalPolicy` and `resolveApprovalForProposal()`,
+   which derive *which* roles are required from the proposal's own risk
+   tier instead of making every caller decide that themselves. See
+   "Identity & permission" above.
 
 This gets a real Plan→Do→Check→Act path running end to end, entirely
 deterministic, against `tests/agentic/shell/act.test.ts`'s scenarios
-(accept, reject, awaiting approval, approved, declined, Do itself failing)
-and `tests/agentic/planning/toPlanProposal.test.ts`'s (valid batch,
-hallucinated field, hallucinated instruction kind entirely), plus
-`tests/agentic/verification/*.test.ts`'s (merge semantics, batch-size
-threshold, PII-shaped rationale, and the assembled `patientVerifier`
-letting a PDPA rejection override what risk tier alone would only send to
-human approval). Still not done: a real (persistent) shell in place of the
-in-memory one, an identity/permission system behind `Approval.approverId`,
-and the one genuinely non-deterministic component — the LLM planner
-itself, which can now be wired in behind `toPlanProposal()` without this
-layer's safety gate depending on the LLM ever being trustworthy.
+(accept, reject, awaiting approval, approved, declined, Do itself failing),
+`tests/agentic/planning/toPlanProposal.test.ts`'s (valid batch, hallucinated
+field, hallucinated instruction kind entirely), `tests/agentic/verification/
+*.test.ts`'s (merge semantics, batch-size threshold, PII-shaped rationale,
+and the assembled `patientVerifier` letting a PDPA rejection override what
+risk tier alone would only send to human approval), and
+`tests/agentic/identity/*.test.ts`'s (unknown identity, known identity
+holding none of the required roles, any-of-several-roles, fail-closed on an
+empty role list, the tier-driven policy giving `AdmitPatient` and
+`DischargePatient` different acceptable roles, and — in
+`approvalFlow.test.ts` — the full composition with `act()`, including an
+impersonation attempt that never produces an `Approval` at all). Still not
+done: a real (persistent) shell in place of the in-memory one, and the one
+genuinely non-deterministic component — the LLM planner itself, which can
+now be wired in behind `toPlanProposal()` without this layer's safety gate
+depending on the LLM ever being trustworthy.
 
 ## Open questions for review
 
-- Who is the "approver" for `needs-human-approval` in practice — a
-  clinician, a specific role, anyone with a permission? `Approval.approverId`
-  is currently just a free-form string; nothing checks that the ID is real,
-  authorized, or even the same person the proposal was routed to. This layer
-  doesn't design that identity/permission system.
+- `resolveApprovalForProposal()` now binds `Approval.approverId` to a real,
+  role-checked identity and derives the required roles from `ApprovalPolicy`
+  keyed by risk tier (see "Identity & permission" above) — but
+  `patientApprovalPolicy`'s role names (`physician`, `charge-nurse`) are
+  placeholders, not sourced from any real hospital credentialing system,
+  and *who is authorized to define or change this policy* is itself
+  undesigned. Today it's just a exported constant anyone with source
+  access can edit — there's no approval process for the approval process.
+- The policy is keyed by risk tier only, not by *which* verifier produced
+  `needs-human-approval` — a batch-size flag and a risk-tier flag both
+  require the same roles today. Worth revisiting if a rule ever needs a
+  different bar (e.g. "any reviewer can clear an oversized-but-otherwise-
+  fine batch, but only a physician can clear a leaked-PII rejection" — note
+  the PDPA rule currently `reject`s outright rather than asking for
+  approval at all, precisely to avoid this case).
 - Does the audit record for agentic proposals live in the same store as
   effects from human-initiated instructions, or a separate one that's
   cross-referenced? `createInMemoryShell` doesn't answer this — it's a test

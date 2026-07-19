@@ -97,7 +97,7 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
-      approval: { approverId: 'dr-chen', approved: true, decidedAt: '2026-07-19T00:05:00.000Z' },
+      approval: { approverId: 'dr-chen', approverRole: 'clinical-approver', approved: true, decidedAt: '2026-07-19T00:05:00.000Z' },
       recordedAt: '2026-07-19T00:05:01.000Z',
     });
 
@@ -105,7 +105,7 @@ describe('act', () => {
     expect(shell.commits).toHaveLength(1);
     expect(shell.auditLog[0]).toMatchObject({
       commitOutcome: 'committed',
-      approval: { approverId: 'dr-chen', approved: true },
+      approval: { approverId: 'dr-chen', approverRole: 'clinical-approver', approved: true },
     });
   });
 
@@ -117,7 +117,7 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
-      approval: { approverId: 'dr-chen', approved: false, decidedAt: '2026-07-19T00:05:00.000Z' },
+      approval: { approverId: 'dr-chen', approverRole: 'clinical-approver', approved: false, decidedAt: '2026-07-19T00:05:00.000Z' },
       recordedAt: '2026-07-19T00:05:01.000Z',
     });
 
