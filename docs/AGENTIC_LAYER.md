@@ -568,7 +568,36 @@ signs off on any of this) rather than merely unbuilt.
 - Should `auto`-tier proposals still require *any* rule to pass before Act,
   or is `auto` reserved only for instructions with no side effects at all
   (e.g. a future read-only query instruction)? This document assumes the
-  latter but doesn't commit any instruction to `auto` yet.
+  latter but doesn't commit any instruction to `auto` yet. More concretely:
+  - **No instruction actually uses `auto` today.** Both `AdmitPatient` and
+    `DischargePatient` are `review-required`/`approval-required` — this
+    whole question is hypothetical until someone actually proposes an
+    instruction for that tier. Might be fine to leave genuinely unresolved
+    until then, rather than deciding preemptively what a use case that
+    doesn't exist yet needs.
+  - **What `auto` means in the code today, worth being explicit about
+    since it's an easy thing to assume wrong:** `auto` does *not* bypass
+    Check. `createRiskTierVerifier` only returns `accept` for its own,
+    single dimension; `combineVerifiers` still runs the batch-size and
+    PDPA rules independently, and either can still force
+    `needs-human-approval` or `reject` even for an `auto`-tier proposal.
+    "Auto" currently means "the risk-tier verifier's own vote is accept,"
+    not "skip Check altogether" — which is the safer of the two readings,
+    but it's easy to assume the other one from the name alone.
+  - **Whether that's the right semantics long-term, or whether `auto`
+    should be a genuine bypass of the whole Plan→Do→Check→Act pipeline
+    for instructions with no side effects at all.** A hypothetical
+    read-only "query" instruction has nothing for Do to dry-run and
+    nothing for Act to commit — routing it through the full pipeline
+    might be pure overhead for something that was never really a
+    "proposal to commit" in the first place.
+  - **Whether `auto` is conflating two different concepts.** "Low-risk
+    enough to write without human approval" and "doesn't need to go
+    through Act's commit logic at all because there's nothing to commit"
+    are not the same thing — a future low-risk *write* instruction (if
+    one ever exists) belongs in the first bucket, a read-only query
+    belongs in the second, and the current single `RiskTier` union
+    doesn't distinguish them.
 - The platform is leaning Azure OpenAI (existing enterprise agreement —
   see "Wiring `CompletionFn` against Azure OpenAI" above), but the actual
   resource region, model deployment, and Azure OpenAI's own Data
