@@ -517,7 +517,33 @@ signs off on any of this) rather than merely unbuilt.
   different bar (e.g. "any reviewer can clear an oversized-but-otherwise-
   fine batch, but only a physician can clear a leaked-PII rejection" — note
   the PDPA rule currently `reject`s outright rather than asking for
-  approval at all, precisely to avoid this case).
+  approval at all, precisely to avoid this case). More concretely:
+  - **`VerifyDecision` loses provenance on merge.**
+    `combineVerifiers`'s `mergeDecisions` concatenates `reasons` from
+    every verifier that contributed to a `needs-human-approval` decision,
+    but nothing in the merged result says *which specific verifier(s)*
+    fired. Per-rule role requirements would need that provenance
+    preserved, not just the combined reason strings.
+  - **Today, every `needs-human-approval` gets the same role bar,
+    regardless of which rule caused it** — because
+    `resolveApprovalForProposal` derives required roles purely from
+    `effectiveTier`, never from which verifier actually flagged the
+    proposal. A batch-size overage — a purely administrative concern —
+    currently demands the same `physician`/`charge-nurse` bar as a
+    genuinely clinical risk-tier flag, just because they happen to
+    produce the same decision kind.
+  - **Is that actually too strict for a non-clinical rule?** A batch-size
+    flag arguably doesn't need clinical judgment to clear at all — a
+    ward clerk or shift supervisor role might be perfectly adequate — but
+    nothing here distinguishes "this needs a clinician" from "this needs
+    someone to just look at it," because both currently collapse into
+    the same `needs-human-approval` kind with the same policy lookup.
+  - **This is exactly why the PDPA rule uses `reject`, not
+    `needs-human-approval`, in the first place** — sidestepping this
+    whole granularity problem for that rule specifically, rather than
+    resolving it. Any *future* rule that wants `needs-human-approval`
+    with a role bar different from "whatever this proposal's risk tier
+    says" would hit the same problem the PDPA rule was designed to avoid.
 - Does the audit record for agentic proposals live in the same store as
   effects from human-initiated instructions, or a separate one that's
   cross-referenced? `createFileShell` doesn't resolve this — it's a
@@ -564,7 +590,38 @@ signs off on any of this) rather than merely unbuilt.
   or multi-writer story (see "The persistent shell" above) — all
   operational decisions a real deployment has to make, not something this
   reference implementation should guess at. Someone still has to decide
-  where these files actually live and who's responsible for them.
+  where these files actually live and who's responsible for them. More
+  concretely:
+  - **Retention/rotation is a records-management decision, not an
+    engineering one, and getting it wrong is risky in both directions.**
+    MOHW's medical-record retention rules run multi-year, sometimes
+    indefinite (human trials, minors) — an append-only file that's never
+    rotated just grows forever, but rotating it incorrectly could delete
+    something still legally required to be kept. Nobody should build a
+    rotation policy for this without the actual retention rule in hand
+    first.
+  - **No backup or replication story.** A single disk failure loses the
+    audit trail outright — a severe failure mode for something whose
+    whole purpose is non-repudiation. This is infrastructure ownership
+    (whoever runs the deployment's hosting environment), not something
+    `fileShell.ts` itself should attempt.
+  - **No encryption at rest.** `commitsFile`/`auditFile` hold
+    `encounterId`/`patientId`-bearing JSON in plaintext on disk. Whether
+    disk-level, filesystem-level, or field-level encryption is required
+    depends on the deployment's broader security posture, which this
+    reference implementation has no visibility into.
+  - **No coordination across multiple writers.** Only single-process
+    `appendFileSync` safety is provided (see "The persistent shell"
+    above) — if the calling application ever runs as more than one
+    process appending to the same files, lines can interleave. Scaling
+    beyond one writer needs either file locking, a single dedicated
+    writer process, or moving off plain files entirely — not something
+    to discover in production.
+  - **This was framed as a reference implementation, not a hardening
+    target.** The intent was always that going to production means
+    *swapping this out* for whatever real store a deployment needs, not
+    incrementally bolting retention/backup/encryption/locking onto
+    `fileShell.ts` until it becomes one.
 - Should `auto`-tier proposals still require *any* rule to pass before Act,
   or is `auto` reserved only for instructions with no side effects at all
   (e.g. a future read-only query instruction)? This document assumes the
@@ -647,4 +704,33 @@ signs off on any of this) rather than merely unbuilt.
   timestamps, not fine the moment a richer clinical domain adds anything
   more sensitive. Nothing currently enforces that a future prompt builder
   actually minimizes; it's on whoever writes that prompt builder to do it,
-  same as it's on `patientPromptBuilder` today.
+  same as it's on `patientPromptBuilder` today. More concretely:
+  - **There is no mechanical enforcement of minimization at all.**
+    `PromptBuilder<TCtx>.build()` receives the *entire* domain context
+    with no type-level or runtime constraint on what it's allowed to put
+    in the returned prompt string. Minimization today is pure author
+    discipline, not a structural gate — unlike validation, risk tiering,
+    or the PDPA rationale scan, which are all gates the type system or a
+    verifier enforces regardless of what any one file's author
+    remembers to do.
+  - **A narrower "planning context" type, projected before the prompt
+    builder ever sees it, would make this structural instead of
+    conventional.** E.g. requiring callers to derive a smaller
+    `PatientPlanningContext` (only the fields a given goal actually
+    needs) and passing *that* to `PromptBuilder`, rather than the full
+    `PatientContext` — turning "did the author remember to minimize"
+    into "does this compile against a deliberately narrow type." Nobody
+    has built this; today's `PromptBuilder<TCtx>` signature doesn't even
+    invite it.
+  - **"What's actually needed" isn't one fixed answer.** Different goals
+    plausibly need different subsets of context (planning an admission
+    vs. a discharge don't need identical fields), so even a single
+    "minimized context" projection might not be minimal enough for every
+    goal — this could need goal-specific projections, which is real
+    added complexity, not a one-line fix.
+  - **This is untested even for today's low-risk shape.** `pdpaRules.ts`
+    checks the *output* `rationale` for leaked identifiers, but nothing
+    checks the *input* — there is no test that would fail if someone
+    added a sensitive field to `PatientContext` and `patientPromptBuilder`
+    blindly started serializing it into every prompt. The only safety net
+    right now is code review noticing it, not a test.
