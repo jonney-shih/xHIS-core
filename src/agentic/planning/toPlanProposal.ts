@@ -2,7 +2,7 @@ import type { Kinded } from '../../core/execution/kinded.js';
 import { err, ok, type Result } from '../../core/execution/result.js';
 import type { IndexedValidationIssues, InstructionValidatorRegistry } from '../validation/validator.js';
 import { validateInstructions } from '../validation/validator.js';
-import type { PlanProposal } from './proposal.js';
+import type { PlanningGoal, PlanProposal } from './proposal.js';
 
 /**
  * What an untrusted planner (e.g. an LLM) actually produces, before its
@@ -15,6 +15,27 @@ export interface RawPlanOutput {
   readonly rationale: string;
   readonly modelVersion: string;
   readonly promptVersion: string;
+}
+
+/**
+ * An untrusted planner's contract — deliberately different from
+ * `Planner` in `proposal.ts`. `Planner.plan()` returns an already-typed
+ * `PlanProposal` and is for planners that are trusted by construction
+ * (see `stubPlanner.ts`); this one returns `Result<RawPlanOutput, string>`
+ * because there are two distinct things that can go wrong before a
+ * `PlanProposal` exists at all — the planner might not even produce a
+ * parseable response (the `err` case here), or it might parse fine but
+ * fail per-instruction validation (handled downstream by `toPlanProposal`,
+ * not by this interface). `feedback` carries forward what went wrong on a
+ * previous attempt — see `planWithRetries.ts` — empty on a first attempt.
+ */
+export interface RawPlanner<TCtx> {
+  plan(
+    goal: PlanningGoal,
+    context: TCtx,
+    proposedAt: string,
+    feedback: readonly string[],
+  ): Promise<Result<RawPlanOutput, string>>;
 }
 
 /**

@@ -224,6 +224,56 @@ this is a convention enforced by review and tests
 (`tests/agentic/identity/approvalFlow.test.ts`), not something `tsc` can
 check for you.
 
+## The LLM planner
+
+Everything above exists so this piece could be added without the rest of
+the system having to trust it. `src/agentic/planning/` now has the actual
+untrusted-planner path, not just the stub:
+
+- `CompletionFn = (prompt: string) => Promise<string>` — one text-
+  completion call, nothing more. No vendor SDK, no model name, no auth
+  anywhere in this codebase's types. xHIS-core still has no opinion about
+  which LLM vendor is used, and still doesn't resolve the PDPA/DPA/BAA/
+  cross-border-transfer questions above — whoever calls `createLlmPlanner`
+  supplies a `CompletionFn` backed by whatever vendor and credentials their
+  own procurement/legal review actually cleared.
+- `PromptBuilder<TCtx>.build(goal, context, feedback)` — turning a goal +
+  context (+ any feedback from a failed prior attempt) into prompt text is
+  a domain decision, not something the generic adapter should hardcode.
+  `patientPromptBuilder.ts` is the concrete (illustrative, not
+  authoritative) example for the patient domain: it states the closed
+  instruction schema inline, and explicitly tells the model not to put
+  identifiers in `rationale` — a real reduction in how often that happens,
+  but a request to the model, not enforcement; `pdpaRules.ts`'s scan is
+  still the actual backstop.
+- `createLlmPlanner(complete, promptBuilder, modelVersion, promptVersion)`
+  returns a `RawPlanner<TCtx>` — builds the prompt, calls `complete`,
+  parses the response with `json.ts`'s `extractJson` (tolerates markdown
+  code fences and surrounding prose — models rarely return *just* JSON),
+  and checks only that the parsed shape has an `instructions` array and a
+  `rationale` string. It does **not** validate individual instructions —
+  that's still `toPlanProposal`'s job, one layer further down.
+  `modelVersion`/`promptVersion` are fixed constructor arguments, never
+  read from the response or any runtime input, per the TFDA "known,
+  reviewed, closed set" restriction above.
+- `planWithRetries(planner, registry, goal, context, proposedAt,
+  maxAttempts)` drives the whole loop: call the planner, try
+  `toPlanProposal`, and on failure feed exactly what went wrong back in as
+  `feedback` for the next attempt — normalizing two different failure
+  tiers (an unparseable response from `RawPlanner` itself, or a parseable
+  response whose instructions fail per-field validation) into the same
+  `readonly string[]` shape. Returns a `PlanProposal` on the first attempt
+  that fully validates, or a `PlanningFailure` (attempt count + last
+  feedback) only once every attempt is exhausted — nothing partial.
+
+`tests/agentic/planning/llmPlanningEndToEnd.test.ts` exercises the whole
+chain with a fake model that hallucinates a nonexistent instruction kind on
+its first attempt and produces a valid `AdmitPatient` on its second, after
+seeing exactly that mistake described back to it — the same "vibe coding"
+loop the intent/scope conversation that started this document was about,
+now actually wired end to end, with every step in between still fully
+deterministic and type-checked.
+
 ## Proposed layout
 
 ```
@@ -285,12 +335,22 @@ how `src/instructions/patient/**` is domain-specific while
    which derive *which* roles are required from the proposal's own risk
    tier instead of making every caller decide that themselves. See
    "Identity & permission" above.
+9. `src/agentic/planning/`: `CompletionFn` + `PromptBuilder<TCtx>` +
+   `createLlmPlanner()` (a vendor-agnostic adapter around one text-
+   completion call), `json.ts`'s `extractJson()` (tolerates markdown
+   fences and prose around the JSON a model actually returns), and
+   `planWithRetries()` (drives up to N attempts, feeding each attempt's
+   parse/validation problems back as `feedback` for the next). See
+   "The LLM planner" above.
 
 This gets a real Plan→Do→Check→Act path running end to end, entirely
-deterministic, against `tests/agentic/shell/act.test.ts`'s scenarios
-(accept, reject, awaiting approval, approved, declined, Do itself failing),
-`tests/agentic/planning/toPlanProposal.test.ts`'s (valid batch, hallucinated
-field, hallucinated instruction kind entirely), `tests/agentic/verification/
+deterministic except for the one call to `CompletionFn` that Plan itself
+was always meant to isolate, against `tests/agentic/shell/act.test.ts`'s
+scenarios (accept, reject, awaiting approval, approved, declined, Do
+itself failing), `tests/agentic/planning/*.test.ts`'s (JSON extraction from
+fenced/prose-wrapped text, a fake model's hallucinated instruction kind
+recovered on retry via `llmPlanningEndToEnd.test.ts`, and exhausting every
+attempt without ever producing a proposal), `tests/agentic/verification/
 *.test.ts`'s (merge semantics, batch-size threshold, PII-shaped rationale,
 and the assembled `patientVerifier` letting a PDPA rejection override what
 risk tier alone would only send to human approval), and
@@ -300,10 +360,8 @@ empty role list, the tier-driven policy giving `AdmitPatient` and
 `DischargePatient` different acceptable roles, and — in
 `approvalFlow.test.ts` — the full composition with `act()`, including an
 impersonation attempt that never produces an `Approval` at all). Still not
-done: a real (persistent) shell in place of the in-memory one, and the one
-genuinely non-deterministic component — the LLM planner itself, which can
-now be wired in behind `toPlanProposal()` without this layer's safety gate
-depending on the LLM ever being trustworthy.
+done: a real (persistent) shell in place of the in-memory one, and an
+actual LLM vendor decision — see the new open questions below.
 
 ## Open questions for review
 
@@ -331,3 +389,21 @@ depending on the LLM ever being trustworthy.
   or is `auto` reserved only for instructions with no side effects at all
   (e.g. a future read-only query instruction)? This document assumes the
   latter but doesn't commit any instruction to `auto` yet.
+- The actual LLM vendor is still undecided — `CompletionFn` makes that a
+  runtime injection rather than a code change, but someone still has to
+  pick one, and the PDPA/MOHW-entrustment/DPA/cross-border-transfer
+  questions in "Restrictions" above need answers *before* that pick is
+  wired to real patient context, not after.
+- `modelVersion`/`promptVersion` are constructor arguments to
+  `createLlmPlanner`, so a version bump is a code change rather than
+  something silently swappable at runtime — but there's no defined review
+  or sign-off process for *making* that code change. The TFDA restriction
+  says the set must be "known, reviewed, closed"; this only gets the
+  "closed" part for free from the code shape. "Reviewed" is still a
+  process someone has to define.
+- `patientPromptBuilder` serializes the whole `context.encounters` map
+  into the prompt — fine while `PatientContext` only carries IDs and
+  timestamps, not fine the moment a richer clinical domain adds anything
+  more sensitive. Nothing currently enforces that a future prompt builder
+  actually minimizes; it's on whoever writes that prompt builder to do it,
+  same as it's on `patientPromptBuilder` today.
