@@ -523,7 +523,43 @@ signs off on any of this) rather than merely unbuilt.
   cross-referenced? `createFileShell` doesn't resolve this — it's a
   reference implementation for the agentic layer specifically, not a
   design for where the *whole* system's audit trail lives. Affects how
-  "one audit trail" claims hold up under an MOHW review.
+  "one audit trail" claims hold up under an MOHW review. More concretely:
+  - **There's no human-initiated shell yet to even compare against.**
+    docs/ARCHITECTURE.md already flags that nothing wires `patientEngine`'s
+    own `execute()`/`executeSequence()` output through any
+    `ImperativeShell` for directly human-issued instructions. So "same
+    store or separate" isn't a choice between two existing things today —
+    it's a choice that only becomes real once that shell gets built.
+  - **`ImperativeShell` doesn't force either answer.** The interface has
+    no idea whether its caller is `act()` or a future human-initiated
+    equivalent, so a deployment could point both at the very same
+    `createFileShell(paths)` and get a naturally unified log for free, or
+    deliberately give them separate paths. That choice is already
+    available at wiring time, with no new code needed either way —
+    nobody's made it yet.
+  - **The record *shapes* differ, even if the storage doesn't.**
+    `AuditRecord` carries agent-specific provenance (`proposal.rationale`,
+    `modelVersion`, `promptVersion`, `decision`, `approval`) a human-issued
+    instruction has no equivalent for — though arguably a human order
+    should *also* record who authorized it and why, which is its own,
+    separate undesigned question. Sharing physical storage doesn't by
+    itself answer whether the two should share a common outer "envelope"
+    shape (e.g. a `source: 'human' | 'agent'` discriminant with a
+    per-source payload) so they stay queryable together later even if
+    their payloads differ.
+  - **Cross-referencing by data already works; querying across sources
+    doesn't.** Every `PatientInstruction` already carries
+    `encounterId`/`patientId`, so any record — human- or agent-originated
+    — can already be correlated by that key regardless of which file or
+    store it lives in. What doesn't exist is a query/view layer that
+    actually assembles "everything that happened to this encounter, in
+    order, regardless of source" into one timeline — which is closer to
+    what an MOHW review would actually want to look at than "which file
+    is this row in."
+  - What MOHW review specifically expects here — one physical store, or
+    provably-correlatable separate ones — is itself unconfirmed; this is
+    a legal/regulatory question, not one this document resolves by
+    reasoning about it.
 - `createFileShell` has no retention/rotation, backup, encryption-at-rest,
   or multi-writer story (see "The persistent shell" above) — all
   operational decisions a real deployment has to make, not something this
