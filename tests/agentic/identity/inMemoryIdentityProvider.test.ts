@@ -6,8 +6,8 @@ describe('createInMemoryIdentityProvider', () => {
     { id: 'dr-chen', displayName: 'Dr. Chen', roles: ['clinical-approver'] },
   ]);
 
-  it('resolves a known identity by ID', () => {
-    expect(provider.resolve('dr-chen')).toEqual({
+  it('resolves a known identity by ID, ignoring asOf entirely', () => {
+    expect(provider.resolve('dr-chen', '2026-07-21T00:00:00.000Z')).toEqual({
       id: 'dr-chen',
       displayName: 'Dr. Chen',
       roles: ['clinical-approver'],
@@ -15,6 +15,6 @@ describe('createInMemoryIdentityProvider', () => {
   });
 
   it('returns undefined for an unknown identity', () => {
-    expect(provider.resolve('nobody')).toBeUndefined();
+    expect(provider.resolve('nobody', '2026-07-21T00:00:00.000Z')).toBeUndefined();
   });
 });

@@ -728,14 +728,13 @@ system would need.
   this way; this is the first domain where skipping that discipline
   would have silently broken the test's own validity, not just its
   realism.
-- **This is a first, not-yet-taken step toward closing a named gap, not
-  a claim that the gap is closed.** `AGENTIC_LAYER.md`'s open questions
-  flag `createInMemoryIdentityProvider` as a fixed snapshot with no time
-  dimension and no record of *why* an identity holds a role. This domain
-  is what a real answer could be built on — a real `IdentityProvider`
-  could plausibly derive `Identity.roles` from this domain's committed
-  state instead of a hand-maintained list — but nothing here actually
-  wires the two together. That remains a separate, larger step.
+- **The connection to `IdentityProvider` has since been made — see
+  "Resolved: a real `IdentityProvider`, backed by nursing" below.** This
+  bullet originally said the connection was a "first, not-yet-taken
+  step" — true when this section was written, no longer true a few
+  commits later. Left here, annotated, rather than quietly rewritten,
+  same discipline this document already applies to its other
+  superseded claims.
 - **What this doesn't prove:** real nursing credentialing needs far more
   than this — competency-specific role requirements, unit-level
   scope-of-practice rules, grace periods for in-progress
@@ -748,3 +747,63 @@ system would need.
   constraint — be enforced with the same discipline as the other three
   shapes already proven. Yes, and it required no change to
   `core/execution` to do it.
+
+## Resolved: a real IdentityProvider, backed by nursing
+
+`src/agentic/identity/nursingIdentityProvider.ts`'s `createNursingIdentityProvider`
+derives `Identity.roles` from `nursing`'s committed credential/role-grant
+state instead of a hand-maintained list — the connection the previous
+section named as a plausible next step, now actually built.
+
+- **The existing `IdentityProvider` interface had no way to ask "as of
+  when," and that had to be fixed first.** Whether an identity still
+  holds a role is inherently a question about a specific moment — a
+  time-varying provider needs *some* timestamp to check expiry/revocation
+  against. `IdentityProvider.resolve()` gained an explicit `asOf: string`
+  parameter (not ambient time — the same discipline every handler in
+  this codebase already follows). `createInMemoryIdentityProvider`
+  accepts and ignores it, since a fixed directory has no time dimension
+  to answer against at all; `resolveApproval.ts` now threads
+  `ApprovalRequest.decidedAt` through as `asOf` — a timestamp that was
+  already being collected and simply wasn't reaching the one place that
+  needed it.
+- **The validity check had to be genuinely retrospective, not just
+  "current," and that's a different check than `grantRoleHandler`'s
+  own.** `grantRoleHandler` checks revocation via the credential's
+  *current* `status` — correct for processing an instruction now, in
+  sequence. `nursingIdentityProvider.ts` needs to correctly answer for
+  *any* `asOf`, including a past moment during a retrospective audit
+  review of an old decision — so its check
+  (`src/instructions/nursing/credentialValidity.ts`'s `isCredentialValidAsOf`)
+  compares `asOf` against `revokedAt` as a *value*, not against current
+  `status`. These are two different checks for two different purposes,
+  not a duplicate — and the same `isCredentialValidAsOf` is now shared
+  between the real provider and the guard test that independently
+  verifies it, rather than each maintaining its own copy.
+- **"Known but currently ineligible" and "never seen at all" stayed
+  distinguishable, on purpose.** A staff member with only expired or
+  revoked grants still resolves to `{ roles: [] }`, not `undefined` —
+  `resolveApproval.ts` already reports a different, more accurate
+  reason for each ("holds none of the required roles" vs. "no identity
+  found"), and collapsing the two would have thrown that distinction
+  away for no reason.
+- **Proven through the unmodified pipeline, not just in isolation.**
+  `tests/agentic/identity/nursingIdentityProviderApprovalFlow.test.ts`
+  runs `resolveApprovalForProposal` — completely unchanged — against a
+  `DischargePatient` proposal, with the same approver resolving
+  successfully before their credential expires and failing to resolve
+  after, using the exact same `decidedAt` timestamp that would occur if
+  a human clicked approve at two different real moments. This is the
+  same "swap the provider, not the pipeline" property CDSS already
+  proved for planners, now proved for identity.
+- **What this doesn't prove:** `identityId` is assumed to be the same
+  identifier space as `StaffId` — a simplifying assumption, not a real
+  identity-federation design. Nothing here handles a staff member with
+  multiple concurrent employments, delegated/temporary credentials, or
+  what happens if `nursingContext` itself is stale relative to the
+  moment `resolve` is called (this provider takes a snapshot, not a
+  live handle — staleness is the caller's problem, the same way it
+  already is for `readLatestContext` elsewhere). And this remains one
+  domain's worth of identity — a real deployment's actual staff
+  registry, SSO, or LDAP/AD directory is still the real
+  `IdentityProvider` most institutions would actually need.

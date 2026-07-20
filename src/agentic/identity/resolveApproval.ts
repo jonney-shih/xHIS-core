@@ -39,7 +39,12 @@ export function resolveApproval(
   requiredRoles: readonly string[],
   request: ApprovalRequest,
 ): ApprovalResolution {
-  const identity = identityProvider.resolve(request.approverId);
+  // `request.decidedAt` is the moment this claim was made — exactly the
+  // timestamp a time-varying `IdentityProvider` (see
+  // `nursingIdentityProvider.ts`) needs to decide whether a role's
+  // backing credential was still valid then, not whether it happens to
+  // be valid at whatever moment this function itself executes.
+  const identity = identityProvider.resolve(request.approverId, request.decidedAt);
 
   if (!identity) {
     return { kind: 'unresolved', reason: `no identity found for approver '${request.approverId}'` };

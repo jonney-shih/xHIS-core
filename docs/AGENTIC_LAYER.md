@@ -176,10 +176,24 @@ the ID was real, that whoever submitted it actually held it, or that they
 were allowed to approve this kind of decision. `src/agentic/identity/`
 closes that gap:
 
-- `IdentityProvider.resolve(id)` — the seam a real identity system (SSO, an
-  LDAP/AD directory, a hospital staff registry, ...) would implement.
+- `IdentityProvider.resolve(id, asOf)` — the seam a real identity system
+  (SSO, an LDAP/AD directory, a hospital staff registry, ...) would
+  implement. `asOf` is explicit because whether an identity still holds a
+  role is inherently a question about a specific moment, not something
+  any implementation should answer by reaching for ambient time.
   `createInMemoryIdentityProvider()` is a fixed-directory stand-in for
-  tests, the same role `createInMemoryShell` plays for Act.
+  tests (accepts `asOf`, ignores it — a fixed list has no time dimension
+  to answer against), the same role `createInMemoryShell` plays for Act.
+  `src/agentic/identity/nursingIdentityProvider.ts`'s
+  `createNursingIdentityProvider` is the first real (non-test-stub)
+  implementation: it derives `Identity.roles` from
+  `src/instructions/nursing`'s committed credential/role-grant state, so
+  a role genuinely stops resolving once its backing credential expires
+  or is revoked — see `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: a
+  real IdentityProvider, backed by nursing" for what building it found.
+  It's still one domain's worth of identity, not a real institution's
+  actual staff registry/SSO/LDAP — that remains a per-deployment
+  integration, same reasoning as not picking an LLM vendor.
 - `resolveApproval(identityProvider, requiredRoles, request)` — the only
   sanctioned way to turn a raw `ApprovalRequest` (an unverified claim) into
   an `Approval` that `act()` will honor. It resolves the claimed
@@ -424,9 +438,11 @@ how `src/instructions/patient/**` is domain-specific while
    record). `patient.ts` assembles all three (PDPA scan, batch size, risk
    tier) into `patientVerifier`, the Check a real Plan/Do/Act wiring would
    actually use for this domain.
-8. `src/agentic/identity/`: `IdentityProvider` + `createInMemoryIdentityProvider`,
-   `resolveApproval()` — the only sanctioned way to turn a raw
-   `ApprovalRequest` into an `Approval`, binding `approverId` to a real,
+8. `src/agentic/identity/`: `IdentityProvider` + `createInMemoryIdentityProvider`
+   (a fixed-directory stand-in) and `createNursingIdentityProvider` (a real,
+   time-varying implementation backed by `src/instructions/nursing`'s
+   committed state), `resolveApproval()` — the only sanctioned way to turn a
+   raw `ApprovalRequest` into an `Approval`, binding `approverId` to a real,
    role-checked identity instead of trusting whatever string a caller
    supplies — plus `ApprovalPolicy` and `resolveApprovalForProposal()`,
    which derive *which* roles are required from the proposal's own risk

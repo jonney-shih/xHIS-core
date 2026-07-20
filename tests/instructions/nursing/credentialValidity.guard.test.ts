@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isCredentialValidAsOf } from '../../../src/instructions/nursing/credentialValidity.js';
 import { nursingEngine } from '../../../src/instructions/nursing/engine.js';
 import { credentialId, isoTimestamp, roleGrantId, staffId } from '../../../src/instructions/nursing/ids.js';
 import type { CredentialRecord, NursingContext, NursingInstruction } from '../../../src/instructions/nursing/types.js';
@@ -8,18 +9,16 @@ import type { CredentialRecord, NursingContext, NursingInstruction } from '../..
  * docs/DETERMINISTIC_CORE_PATTERN.md): every role grant that exists must
  * have been backed, at the moment it was granted, by a credential that
  * belonged to the same staff member and was neither revoked nor expired
- * yet. This independently re-derives that from each grant's referenced
- * credential's own write-once fields (`issuedAt`/`expiresAt` never
- * change after issuance; `revokedAt` is set at most once) rather than
- * calling `grantRoleHandler`'s own check again — the same "recompute
- * from accumulated state, don't re-run the handler" shape `ledger`'s
- * conservation guard and `scheduling`'s feasibility guard already use.
+ * yet. This independently re-derives that using `isCredentialValidAsOf`
+ * (which recomputes from the credential's own write-once fields) rather
+ * than calling `grantRoleHandler`'s own check again — the same
+ * "recompute from accumulated state, don't re-run the handler" shape
+ * `ledger`'s conservation guard and `scheduling`'s feasibility guard
+ * already use. `isCredentialValidAsOf` is shared with
+ * `agentic/identity/nursingIdentityProvider.ts` (the real, load-bearing
+ * use of the same check), not reimplemented here — this test exercises
+ * it, it doesn't duplicate it.
  */
-function wasCredentialValidAtGrantTime(credential: CredentialRecord, grantedAt: string): boolean {
-  const notYetRevoked = credential.revokedAt === undefined || grantedAt < credential.revokedAt;
-  const notYetExpired = grantedAt < credential.expiresAt;
-  return notYetRevoked && notYetExpired;
-}
 
 /** A small deterministic linear-congruential generator — not
  * `Math.random()`, so a failing run is exactly reproducible from the
@@ -116,7 +115,7 @@ describe('nursing credential/role-grant validity invariant', () => {
       const credential = context.credentials[grant.credentialId];
       expect(credential).toBeDefined();
       expect(credential!.staffId).toBe(grant.staffId);
-      expect(wasCredentialValidAtGrantTime(credential!, grant.grantedAt)).toBe(true);
+      expect(isCredentialValidAsOf(credential!, grant.grantedAt)).toBe(true);
     }
   });
 
@@ -133,6 +132,6 @@ describe('nursing credential/role-grant validity invariant', () => {
       expiresAt: isoTimestamp('2026-02-01T00:00:00.000Z'),
     };
 
-    expect(wasCredentialValidAtGrantTime(expiredCredential, '2026-06-01T00:00:00.000Z')).toBe(false);
+    expect(isCredentialValidAsOf(expiredCredential, '2026-06-01T00:00:00.000Z')).toBe(false);
   });
 });
