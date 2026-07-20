@@ -95,6 +95,10 @@ obligation from "exact replay" to "double-entry balance," swap
 table's structure holds — the code wouldn't, and shouldn't, be shared,
 but the checklist would.
 
+**This paragraph was written before that swap was actually made — see
+"Resolved: the conservation family" below for what happened once it
+was.**
+
 ## Using this for the next domain
 
 Before any new domain (ERP/HRP or otherwise) gets its own agentic layer,
@@ -339,3 +343,59 @@ evidence of an N² shape, and the one dimension a bus would need to
 handle generically (differing reaction shapes) is precisely the
 dimension that shouldn't be generic, because it's where the actual
 clinical/business rules live.
+
+## Resolved: the conservation family, empirically
+
+Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
+same "hard core" family: state/time-precision plus regulatory
+traceability, where the invariant is either exact replay or "don't
+double-book a resource." That left the thesis's other named family
+untested: **conservation** — the double-entry-balance shape this
+document used as its running counterexample from the very first
+section, but never actually built. `src/instructions/ledger` (two
+instructions, `PostEntry`/`ReverseEntry`) closes that gap.
+
+- **Step 3, the one step the thesis said would vary, did vary — and
+  nothing else needed to.** `postEntryHandler` (`src/instructions/ledger/handlers/postEntry.ts`)
+  is where the domain-specific invariant proof actually lives for this
+  family: it sums every line's debit and credit amounts and rejects
+  outright, before touching any account balance, if they don't match.
+  Steps 1, 2, and 4–7 — closed union, validation boundary, combined
+  rules, risk-tiered approval, commit+audit, provenance — needed zero
+  changes to accommodate this; they were never coupled to what "the
+  invariant" happened to mean.
+- **The invariant proof itself had to take a different *shape*, not
+  just different content.** The clinical core's proof
+  (`determinism.guard.test.ts`) is a static grep over source files for
+  banned non-deterministic calls — it doesn't execute anything. The
+  conservation proof
+  (`tests/instructions/ledger/conservation.guard.test.ts`) is the
+  opposite shape: it *runs* sixty synthetic instructions through
+  `ledgerEngine` and checks, after every single one, that the sum of
+  every account's balance across the whole ledger is exactly zero —
+  because conservation is a property of accumulated state over a
+  sequence, not a property `grep` could ever see in isolated handler
+  code. This is exactly what the thesis meant by "the proof mechanism
+  doesn't have to be the type system" — it also doesn't have to be the
+  *same kind* of runtime check twice.
+- **Reversal is the invariant's second-hardest case, and it's solved by
+  sharing code, not duplicating logic.** `reverseEntryHandler` doesn't
+  recompute an "opposite" entry — it calls the same `applyLines()`
+  helper `postEntryHandler` uses, with the sign flipped
+  (`src/instructions/ledger/handlers/applyLines.ts`). A reversal is
+  therefore provably the exact algebraic inverse of its post, not a
+  second implementation that could quietly drift out of balance with
+  the first — the same "don't hand-maintain two copies of the same
+  fact" discipline `patientToLab.ts`'s handlers already followed
+  (reading `encounterId` back off an existing record instead of
+  trusting a caller to resupply it).
+- **What this doesn't prove:** real ledger/ERP correctness needs far
+  more than two instructions — multi-currency, fiscal-period close,
+  accrual/reversal timing rules, reconciliation against external bank
+  statements. None of that was in scope here, deliberately, same
+  restraint as `lab`'s three instructions not modeling a real LIS. The
+  claim under test was narrower and now answered: does `core/execution`'s
+  closed-union/total-registry/pure-handler shape hold for a *conservation*
+  invariant the same way it held for two *state-machine* invariants —
+  yes, with the domain-specific proof step being the only thing that had
+  to change shape to fit it.
