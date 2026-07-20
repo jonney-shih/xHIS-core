@@ -509,3 +509,44 @@ contract `createLlmPlanner` implements — see
   CDSS-specific fields — acceptable for a proof-of-shape exercise, worth
   revisiting if a third, differently-shaped planner ever needs its own
   provenance vocabulary.
+
+## Resolved: large binary objects (PACS/DICOM reference-by-ID)
+
+The other bullet from "Known boundaries" worth the same build-and-verify
+treatment: large binary objects don't fit a plain-JSON context, and the
+proposed fix was reference-by-ID, same discipline `EncounterId` already
+models for cross-domain foreign keys. `src/instructions/imaging`
+(`OrderStudy`/`RecordStudyStored`/`ReportStudy`) builds that convention
+as a real, tested domain instead of a sentence in a doc.
+
+- **The convention only means anything if it's enforced, not just
+  followed.** `recordStudyStoredHandler` rejects any `storageRef` longer
+  than `MAX_STORAGE_REF_LENGTH` (512 characters — generous for a real
+  object-store key or URI, minuscule next to actual pixel data). Without
+  that check, nothing stops a caller from passing embedded image bytes
+  through the one field this domain exposes for it, and the whole point
+  of the convention silently fails the first time someone does. This is
+  the same "the proof mechanism doesn't have to be the type system, but
+  it has to be a check something actually runs" principle `ledger`'s
+  balance check and `scheduling`'s overlap check already established —
+  applied here to a structural/payload-size property instead of a
+  numeric or temporal one, a fourth distinct shape of domain-specific
+  invariant.
+- **The check is about the boundary, not any one instruction.**
+  `tests/instructions/imaging/referenceById.guard.test.ts` doesn't just
+  check one `RecordStudyStored` call in isolation (`recordStudyStored.test.ts`
+  already does that) — it runs thirty studies through `imagingEngine`
+  and asserts the *entire accumulated context* stays a few hundred bytes
+  per study, never growing anywhere near what real image data would
+  cost. Bounding one field's length is only meaningful if it actually
+  keeps the aggregate small too.
+- **What this doesn't prove:** it says nothing about the specialized
+  store `storageRef` actually points to — durability, access control,
+  DICOM-specific metadata (SOP Instance UID, series/study hierarchy),
+  or how a real PACS integration authenticates and retrieves bytes by
+  that reference. None of that is this codebase's problem to solve; the
+  claim under test was narrower and now answered: can the deterministic
+  core stay small, plain-JSON, and fully auditable while a domain it
+  governs references gigabyte-scale data it never touches — yes, as
+  long as the reference itself is bounded and that bound is checked, not
+  assumed.
