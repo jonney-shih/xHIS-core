@@ -106,11 +106,16 @@ and hoping step 3 works itself out. A domain that can't state its own
 propose actions against it yet.
 
 Cross-domain integration (e.g. a clinical `EncounterAdmitted` effect
-triggering an ERP-side ledger entry) is a separate, later concern this
-document deliberately doesn't cover — that's a choreography-vs-
-orchestration question with its own failure modes (a missed event
-silently breaking a domain's invariant, in particular), not something
-resolved by containing non-determinism within either domain individually.
+triggering an ERP-side ledger entry) is a separate concern this document
+deliberately doesn't cover — that's a choreography-vs-orchestration
+question with its own failure modes (a missed event silently breaking a
+domain's invariant, in particular), not something resolved by containing
+non-determinism within either domain individually. `src/integration/
+patientToBed.ts` is the first concrete instance — `EncounterAdmitted`
+triggering `AssignBed` — and it's deliberately honest about not solving
+that failure mode: it's in-process and synchronous, not durable
+messaging, and doesn't implement saga/compensation semantics for a batch
+where one admission gets a bed and another in the same batch doesn't.
 The pattern here is about what has to be true *inside* one domain's
 boundary before its own LLM containment holds; it says nothing about how
 two already-contained domains talk to each other.
