@@ -263,16 +263,24 @@ itself, which is real, irreducible business logic that has to be
 written once per relationship regardless of how generic the plumbing
 underneath it is.
 
-**Deferred on purpose, same as `IsoTimestamp`.** `src/instructions/bed/ids.ts`
-already faced this exact choice — re-export `IsoTimestamp` from the
-patient domain, or relocate it to a shared, domain-agnostic location —
-and chose to defer the relocation because one additional consumer
-wasn't yet a strong enough signal for where the *right* shared home
-should be. The same reasoning applies here at a larger scale: with only
-two domains, there is no second real subscription relationship to
-generalize against, so any generic "subscribe to any domain's effects"
-abstraction built today would be shaped by guesswork, not by an actual
-second use. The design above is deliberately detailed enough that
-building it later shouldn't require rediscovering this reasoning — just
-acting on it once a third domain actually needs to subscribe to
+**Deferred on purpose — the same choice `IsoTimestamp` already faced,
+and has since resolved.** `src/instructions/bed/ids.ts` once re-exported
+`IsoTimestamp` from the patient domain rather than relocating it, because
+one additional consumer wasn't yet a strong enough signal for where the
+*right* shared home should be. That relocation has since happened —
+`IsoTimestamp` now lives in `src/core/temporal.ts`, re-exported from both
+domains' `ids.ts` — once the second real consumer (`bed`) made it
+unambiguous the type was never patient-specific in the first place. The
+event bus question is the same shape of decision at a larger scale, not
+yet at the same point: with only two domains, there is still no second
+real *subscription relationship* to generalize against (a type used by
+two domains and a many-domain event-reaction mechanism are different
+things), so a generic "subscribe to any domain's effects" abstraction
+built today would be shaped by guesswork, not an actual second use.
+Resolving the smaller `IsoTimestamp` case doesn't imply the bigger event-
+bus case is ready to resolve the same way — the trigger is a real third
+subscriber showing up, not the mere existence of a relocated type. The
+design above is deliberately detailed enough that building it later
+shouldn't require rediscovering this reasoning — just acting on it once
+a third domain actually needs to subscribe to
 something.

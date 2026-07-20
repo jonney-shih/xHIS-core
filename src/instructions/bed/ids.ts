@@ -19,14 +19,9 @@ export function bedId(value: string): BedId {
 export { encounterId, type EncounterId } from '../patient/ids.js';
 
 /**
- * `IsoTimestamp` also currently lives in `../patient/ids.ts`, re-exported
- * from there rather than redefined — but unlike `EncounterId`, a
- * timestamp isn't a concept the patient domain "owns"; it's genuinely
- * domain-agnostic. Now that a second domain needs it, that's a sign
- * `IsoTimestamp` (and its constructor) probably belongs in a shared,
- * domain-agnostic location instead of inside `patient/ids.ts` — not
- * changed here since that's a small refactor of existing patient-domain
- * files, not something this domain's own instruction union needs to
- * settle to be written.
+ * `IsoTimestamp` now lives in `core/temporal.ts` — genuinely domain-
+ * agnostic, unlike `EncounterId` above. Re-exported here (and from
+ * `patient/ids.ts`) so existing imports from either domain's `ids.js`
+ * keep working unchanged.
  */
-export { isoTimestamp, type IsoTimestamp } from '../patient/ids.js';
+export { isoTimestamp, type IsoTimestamp } from '../../core/temporal.js';
