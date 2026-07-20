@@ -186,16 +186,10 @@ so they read as known boundaries later, not as oversights.
   variation on `patientToBed.ts`.
 - **N-way choreography doesn't scale as N hand-written pairwise reaction
   modules.** One integration module for one domain pair (patient→bed) is
-  fine. A real HIS has admission plausibly triggering bed assignment,
-  nursing care-plan creation, lab order review, billing, and CDSS alerts
-  all at once — up to N² hand-written modules for N domains reacting to
-  each other. At that point the pattern probably needs to generalize
-  from "one module reads one other domain's commit log" into something
-  closer to a shared event bus that multiple domains can each
-  independently subscribe to, still keyed by the same durable-cursor
-  idea `OutboxCursor` already proves out for one consumer. Nothing here
-  builds that; it's a real design problem for whenever a third domain
-  needs to react to patient effects, not before.
+  fine; a real HIS has several domains all potentially reacting to each
+  other. See "Event bus vs. federated subscription" below for the fuller
+  reasoning — the short version is that this is deferred deliberately,
+  not an oversight.
 - **CDSS is not a new category — it should be treated as another Plan
   source, not a parallel system.** A clinical decision support
   recommendation and an LLM's proposal are the same *shape* of problem:
@@ -215,3 +209,70 @@ so they read as known boundaries later, not as oversights.
   scaling to it might be fine as-is or might need a different batching
   or windowing strategy. This is an open performance question, not a
   correctness one, and isn't resolved here.
+
+## Event bus vs. federated subscription (deferred)
+
+The "N-way choreography" boundary above deserves the fuller reasoning,
+because the tempting move — build a generic event bus now — turns out to
+be the same mistake this codebase has consistently avoided elsewhere.
+
+**The hard part is already domain-agnostic; only the wrapping is
+bed-shaped.** `createFileOutboxCursor` durably tracks "how far has this
+one consumer gotten" against any ordered log; `readCommits` durably
+produces that ordered log for any domain that uses `createFileShell`.
+Nothing stops a third domain (say, nursing) from opening its own cursor
+file and reading `patientCommitsFile` today — `relayPatientEffectsToBed`
+just happens to be typed and named for the one reaction that exists.
+What's genuinely domain-specific is only `patientToBed.ts`'s reaction
+logic and its `PatientBedReactionOutcome` type — the same split as
+`core/execution` being domain-agnostic while `instructions/patient`
+is the concrete consumer. Building "an event bus" is really extracting
+the already-generic 80% from the currently bed-shaped 20%, not inventing
+new machinery.
+
+**The real fork is centralized vs. federated, and federated wins here.**
+A centralized bus — every domain publishes into one shared log — gives
+free global ordering, but introduces a shared dependency every domain
+must couple to, which cuts against the bounded-context discipline this
+whole codebase follows (each domain owns its own closed instruction
+union, its own commit log, its own risk policy). The federated
+alternative — every domain keeps its own log; anyone who cares opens
+their own cursor into it — adds no new shared coupling. Whoever writes
+`patientToNursing.ts` someday should do the same thing
+`patientToBed.ts` already does, not register with a new central broker.
+
+**Reacting and observing are different needs and should stay different
+mechanisms.** The earlier open question about whether human- and agent-
+originated audit records need one merged timeline is *not* a reason to
+centralize the bus — a write-time bus and a read-time query view solve
+different problems. A single shared log written by every domain gives
+you global order at write time, at the cost of coupling every domain to
+it. A read-only tool that reads several domains' independent logs and
+merge-sorts them by timestamp (or by a shared key like `encounterId`)
+gets the same *observability* outcome without any domain needing to
+know the tool exists. Nothing here builds that tool either, but it's
+the right shape for that need, not the bus.
+
+**N² is probably not the real shape of the problem.** Real domain
+graphs tend to be sparse and hub-like, not complete — Billing might
+subscribe to Patient, Lab, and Bed; Lab probably only subscribes to
+Patient. Generalizing the relay saves the *reliability engineering*
+(cursors, redelivery safety, idempotency reasoning) from being
+rederived per pair — it was never going to save the *reaction logic*
+itself, which is real, irreducible business logic that has to be
+written once per relationship regardless of how generic the plumbing
+underneath it is.
+
+**Deferred on purpose, same as `IsoTimestamp`.** `src/instructions/bed/ids.ts`
+already faced this exact choice — re-export `IsoTimestamp` from the
+patient domain, or relocate it to a shared, domain-agnostic location —
+and chose to defer the relocation because one additional consumer
+wasn't yet a strong enough signal for where the *right* shared home
+should be. The same reasoning applies here at a larger scale: with only
+two domains, there is no second real subscription relationship to
+generalize against, so any generic "subscribe to any domain's effects"
+abstraction built today would be shaped by guesswork, not by an actual
+second use. The design above is deliberately detailed enough that
+building it later shouldn't require rediscovering this reasoning — just
+acting on it once a third domain actually needs to subscribe to
+something.
