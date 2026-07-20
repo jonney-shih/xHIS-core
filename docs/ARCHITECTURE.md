@@ -40,7 +40,14 @@ Instruction (closed union) --dispatch--> Handler --returns--> { context, effects
 `src/core/execution/**` is domain-agnostic and reusable. `src/instructions/patient/**`
 is the first concrete consumer (`AdmitPatient`, `DischargePatient`), proving
 the pattern end-to-end without prematurely modeling the rest of the clinical
-domain.
+domain. `src/instructions/bed/**` (`AssignBed`, `ReleaseBed`) is the second —
+a resource-management domain, not a clinical one, reusing the exact same
+`createEngine`/`HandlerRegistry`/exhaustiveness-proof machinery with no
+changes to `src/core/execution/**` at all. Its `BedInstruction` references
+the patient domain's `EncounterId` as a foreign key (imported, not
+redefined — see `src/instructions/bed/ids.ts`) rather than treating the two
+domains as unrelated, since an encounter is a concept the patient domain
+owns and bed management only ever refers to.
 
 ## Rules that keep the exhaustiveness guarantee real
 
