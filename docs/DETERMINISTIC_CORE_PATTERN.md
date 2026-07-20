@@ -453,3 +453,59 @@ to build a real scheduler.
   to enforce one hard, checkable constraint before anything reaches it.
   All three named families in the original thesis have now each produced
   one real, tested domain.
+
+## Resolved: CDSS as a Plan source
+
+The "Known boundaries" section above asserted CDSS "is not a new
+category — it should be treated as another Plan source, not a parallel
+system," but nothing had ever built a second, non-LLM planner to check
+that claim against. `src/agentic/planning/cdssPlanner.ts`'s
+`createCdssTriagePlanner` does: a deterministic rule ("recommend
+admitting every not-yet-admitted patient with an emergent triage
+signal") implementing the exact same untrusted `RawPlanner<TCtx>`
+contract `createLlmPlanner` implements — see
+`tests/agentic/planning/cdssPlanningEndToEnd.test.ts` for the proof.
+
+- **Zero pipeline code changed.** `planWithRetries`, `toPlanProposal`,
+  `patientInstructionValidators`, `patientVerifier`, `resolveApprovalForProposal`,
+  and `act()` all run against the CDSS-sourced proposal completely
+  unmodified. The claim under test — "CDSS is just another Plan source"
+  — is exactly the claim that no downstream code needs to know or care
+  where a `PlanProposal` came from, and that held.
+- **A CDSS recommendation gets no shortcut around Check or approval.**
+  `AdmitPatient` is `review-required` (`risk/patient.ts`) regardless of
+  who proposed it; the end-to-end test confirms Check still returns
+  `needs-human-approval` for the CDSS-sourced proposal, and `act()`
+  still refuses to commit without a real, permission-checked `Approval`
+  — the same two failure modes (`awaiting-approval` on no response,
+  and an impersonation attempt producing nothing `act()` will honor)
+  the LLM path already had to handle. This is the concrete form of "not
+  a separate, less-rigorous path just because it looks like a rules
+  engine instead of an LLM."
+- **`RawPlanner<TCtx>`'s `TCtx` never had to equal the domain's own
+  execution context.** `CdssTriageContext` bundles `PatientContext`
+  alongside a list of structured `TriageSignal`s the rule actually
+  needs to decide anything — Do still only ever sees plain
+  `PatientContext` when it calls `patientEngine.executeSequence`. This
+  wasn't a change made to accommodate CDSS; `Planner`/`RawPlanner`'s
+  `TCtx` was always "whatever informs planning," and CDSS is simply the
+  first planner that needed it to be richer than what Do/Check/Act
+  need.
+- **Retrying is where a deterministic planner's difference from an LLM
+  actually shows up.** `llmPlanningEndToEnd.test.ts` recovers from a
+  hallucinated instruction within two attempts because the model reads
+  `feedback` and changes what it produces. The CDSS retry test here
+  shows the opposite: the same broken input, fed back through the exact
+  same `planWithRetries` loop, produces the *identical* validation
+  failure on every attempt up to `maxAttempts`, because a rule that
+  ignores `feedback` by construction has nothing to change. This isn't
+  a defect in `planWithRetries` — retries were only ever an LLM-shaped
+  coping mechanism for probabilistic mistakes; a deterministic planner
+  either gets it right the first time or needs a person or a rule
+  change, not another attempt.
+- **A minor, honest friction point:** `RawPlanOutput`'s `modelVersion`/
+  `promptVersion` fields are LLM-shaped names. CDSS repurposes them (rule
+  engine version, ruleset identifier) rather than the pipeline gaining
+  CDSS-specific fields — acceptable for a proof-of-shape exercise, worth
+  revisiting if a third, differently-shaped planner ever needs its own
+  provenance vocabulary.
