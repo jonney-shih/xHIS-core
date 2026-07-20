@@ -734,3 +734,49 @@ signs off on any of this) rather than merely unbuilt.
     added a sensitive field to `PatientContext` and `patientPromptBuilder`
     blindly started serializing it into every prompt. The only safety net
     right now is code review noticing it, not a test.
+- Check's `reject` decisions never feed back into `planWithRetries` —
+  only `RawPlanner`-level parse/validation failures do. A proposal that
+  fails Check (e.g. a batch-size overage, a PDPA rationale rejection) is
+  returned to whoever called `planWithRetries` as a finished
+  `PlanProposal`; nothing routes it back through another planning
+  attempt with Check's own reasons as `feedback`, even though the exact
+  mechanism to do so already exists and already works for validation
+  failures. This was discussed and deliberately not built, not
+  overlooked:
+  - **The recommendation, if this ever gets built:** scope it to
+    `reject` only, never `needs-human-approval`. A `needs-human-approval`
+    decision means the proposal is *fine* — it just needs a person;
+    replanning has nothing to fix and would waste a cycle where a human
+    decision is what's actually needed. `reject` is a real defect
+    signal, the same shape as a validation failure ("this attempt was
+    wrong, try again"), so it fits the existing retry loop naturally.
+  - **Why it wasn't built anyway — the risk is specific to what gets
+    rejected, not generic to retry loops.** Some `reject` reasons are
+    about proposal *construction* (an oversized batch) where retrying
+    can genuinely help. Others — `pdpaRules.ts`'s PII-rationale scan in
+    particular — are about *content*. Feeding those back risks teaching
+    a planner, attempt over attempt, to find phrasing that slips past a
+    compliance heuristic rather than fixing the actual problem — a
+    materially worse failure mode here than an ordinary validation-retry
+    loop, given this system's whole reason for existing is audit
+    integrity under TFDA/PDPA.
+  - **What building it correctly would also require, not just the
+    feedback wiring itself.** Every rejected attempt would need its own
+    audit record, not just the final accepted one — "the planner tried
+    and got blocked" is itself audit-worthy under this codebase's
+    no-silent-failure discipline, not noise to discard. It would also
+    need a hard attempt cap, the same `maxAttempts` shape validation
+    retries already have, so it can't loop indefinitely against a rule
+    it can never satisfy.
+  - **CDSS sharpened why this matters less than it might first seem.**
+    `cdssPlanningEndToEnd.test.ts` shows retrying a *deterministic*
+    planner against unchanged input produces the identical failure on
+    every attempt — retries only ever help a planner that can read
+    `feedback` and change its output, which an LLM can and a rule-based
+    planner by construction can't. Extending retry-on-reject would only
+    ever help the LLM path, never a CDSS-shaped one, worth knowing
+    before treating this as a universal harness improvement rather than
+    an LLM-specific one.
+  - **Status: not built.** Revisit if a concrete case shows Check
+    rejecting something a replan could actually fix (e.g. an oversized
+    batch), not as a default addition to the harness.
