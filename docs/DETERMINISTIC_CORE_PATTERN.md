@@ -550,3 +550,57 @@ as a real, tested domain instead of a sentence in a doc.
   governs references gigabyte-scale data it never touches — yes, as
   long as the reference itself is bounded and that bound is checked, not
   assumed.
+
+## Resolved: remote care data volume (benchmarked)
+
+The last "Known boundaries" bullet was explicitly a performance
+question, not a correctness one, so it needed a different kind of
+verification than the five domains above — a measurement, not a small
+proof-of-shape exercise. `tests/benchmarks/outboxRelayVolume.bench.test.ts`
+(run via `npm run benchmark`, deliberately excluded from `npm test` —
+see `vitest.config.ts`/`vitest.benchmark.config.ts` — because a timing
+number is not a pass/fail correctness assertion and shouldn't be able to
+flake CI) writes a large synthetic patient commit log, advances the
+cursor to the end of it, appends exactly one new entry, and times both
+`readCommits` alone and a full `relayPatientEffectsToBed` call that has
+to process just that one new entry.
+
+Measured on the machine this was run on (illustrative, not an SLA —
+absolute numbers will differ elsewhere; the *shape* of the result is
+the actual finding):
+
+| Historical entries already behind the cursor | `readCommits` | `relayPatientEffectsToBed` (1 new entry) |
+|---|---|---|
+| 1,000 | 2.51ms | 15.16ms |
+| 10,000 | 14.15ms | 29.45ms |
+| 50,000 | 61.62ms | 102.94ms |
+| 100,000 | 132.21ms | 145.89ms |
+
+- **The concern was real, not hypothetical, and it's confirmed
+  quantitatively: relaying one new event costs more, in direct
+  proportion to how much unrelated history already sits in the log,
+  than it costs to do the actual new work.** `relayEffects`
+  (`core/io/relay.ts`) reads and parses the *entire* file every call
+  regardless of cursor position — at 100,000 historical entries, that
+  read is already ~90% of the total time to process one new admission.
+  This is exactly the "read the whole commit log, process what's new"
+  design the doc flagged, now with a number attached instead of a guess.
+- **It's linear, not worse — which is the reassuring half of the
+  finding.** Time roughly tracks entry count (a 100x growth in history,
+  1,000 → 100,000, produced roughly a 50x growth in read time, not
+  10,000x) — there's no quadratic or exponential pathology hiding in
+  here, just the inherent cost of "parse every line" applied to a file
+  that keeps growing. A continuous vitals stream is a *volume* problem
+  for this design, not a correctness or stability one.
+- **The practical implication is exactly what the doc already
+  anticipated, now backed by a number to reason from instead of a
+  guess:** a synchronous "relay after every single new event" access
+  pattern degrades as the log grows past roughly tens of thousands of
+  entries, and would need either batching (accumulate several new
+  events, relay them together, amortizing one read across many) or log
+  rotation/archival (cap how much history any one relay run has to
+  scan) well before the log reaches the sizes a real continuous
+  remote-monitoring stream would produce over weeks. Neither fix is
+  built here — this benchmark's job was only to convert "might be fine
+  as-is or might need a different strategy" into a concrete threshold to
+  design against, not to build the strategy itself.

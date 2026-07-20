@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "benchmark": "vitest run --config vitest.benchmark.config.ts"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
