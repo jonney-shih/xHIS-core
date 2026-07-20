@@ -399,3 +399,57 @@ instructions, `PostEntry`/`ReverseEntry`) closes that gap.
   invariant the same way it held for two *state-machine* invariants —
   yes, with the domain-specific proof step being the only thing that had
   to change shape to fit it.
+
+## Resolved: the optimization/feasibility family, empirically
+
+The third and last named family from the original reclassification —
+optimization/feasibility, whose named examples are OR scheduling and
+roster generation — was still untested after `ledger`. `src/instructions/scheduling`
+(`ScheduleBooking`/`CancelBooking`) closes that gap the same way `ledger`
+closed the conservation one: minimally, and only to test the claim, not
+to build a real scheduler.
+
+- **The invariant is feasibility, not optimality, and that distinction
+  is the whole point.** This domain does not find a *good* schedule —
+  no search, no "next available slot," no cost function. It only makes
+  an *infeasible* one (two bookings on the same resource with
+  overlapping times) structurally unable to commit. That is exactly
+  what step 3 needs to guarantee for this family: an LLM (or any
+  planner) is free to *propose* whatever schedule it wants, however it
+  wants to search for one — the deterministic core's only job is
+  rejecting proposals that violate the hard constraint, the same
+  separation of concerns `core/execution` already drew between
+  "propose" and "commit" for the other two families.
+- **The invariant check itself is a third distinct *shape*.** `bed`'s
+  no-double-booking check reads one status field, O(1). `ledger`'s
+  balance check sums one entry's own lines, O(entry size). `scheduling`'s
+  feasibility check (`handlers/overlap.ts`'s `findConflicts`) has to scan
+  every *other* booking on the same resource and test for interval
+  overlap — the first domain-specific invariant proof in this codebase
+  that is inherently relational (checked against the rest of the
+  dataset) rather than local (checked against the instruction's own
+  fields or one existing record). `tests/instructions/scheduling/feasibility.guard.test.ts`
+  mirrors that shape: it's a pairwise scan over every currently-scheduled
+  booking, not a running sum.
+- **The determinism guard forced the right implementation, not just a
+  permitted one.** `findConflicts` compares `IsoTimestamp` values as
+  plain strings, never by parsing them into a date object — not a style
+  choice; `tests/instructions/patient/determinism.guard.test.ts` bans
+  constructing that object anywhere under `src/instructions`, and this
+  domain is the first one where the guard actually had teeth: patient/
+  bed/lab/ledger never needed to compare two timestamps against each
+  other, only stamp and store them. Scheduling does, and the guard
+  steered the implementation toward exact, timezone-independent string
+  comparison instead of a parsing path that could have introduced real
+  non-determinism.
+- **What this doesn't prove:** real OR scheduling and roster generation
+  are actual optimization problems — minimizing idle room time, honoring
+  staff qualifications and shift-length rules, balancing fairness across
+  a roster. None of that is here, deliberately. The claim under test was
+  narrower: does this codebase's containment pattern hold when the
+  domain's natural solving strategy is search/optimization rather than a
+  simple state transition or a running total — yes, because the pattern
+  never asked the *domain* to be simple, only asked the *commit boundary*
+  to enforce one hard, checkable constraint before anything reaches it.
+  All three named families in the original thesis have now each produced
+  one real, tested domain.
