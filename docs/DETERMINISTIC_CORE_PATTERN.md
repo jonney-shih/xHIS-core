@@ -604,3 +604,64 @@ the actual finding):
   built here — this benchmark's job was only to convert "might be fine
   as-is or might need a different strategy" into a concrete threshold to
   design against, not to build the strategy itself.
+
+## Resolved: message-ID idempotency for external protocol integration
+
+Revisiting "external protocol integration is a different kind of
+boundary than choreography between two of our own domains" more
+carefully than the first pass did: most of that boundary really is just
+protocol-specific parsing work with no architectural claim left to test
+— CDSS already proved a structurally different, non-LLM input source
+flows through the identical validation/Check/Act gate, and the LLM
+planner path already covers input that doesn't even parse. But one real
+mechanism was hiding inside that bullet, untested by anything built so
+far: **every dedup/idempotency mechanism in this codebase up to this
+point works because *we* control the ordering of our own log.**
+`patientToBed.ts`'s `findBedHoldingEncounter` check and `outboxRelay.ts`'s
+cursor both reduce "have I already handled this" to a position in a log
+we own. A real external interface — a lab analyzer, an imaging modality
+— has no such position: its own retry logic can redeliver the *same
+logical message* through any channel, at any time, with nothing tying
+it to our log at all. `src/integration/externalMessageIdempotency.ts`
+and `externalLabResultAdapter.ts` build and test that one mechanism,
+deliberately isolated from real protocol parsing (`ExternalLabResultMessage`
+is a synthetic shape, not HL7v2/FHIR) and from network-liveness concerns
+(ACK/NAK, retry/backoff, connection handling) — both still genuinely out
+of scope, not deferred with guilt.
+
+- **A membership store is a different data structure than a cursor, not
+  a variation on one.** `MessageIdempotencyStore.hasProcessed(id)` asks
+  "have I seen *this specific* value," which needs a set; `OutboxCursor.read()`
+  asks "how far have I gotten," which needs one number. Trying to force
+  external-message dedup through the cursor abstraction would have
+  meant inventing a fake position for messages that don't have one —
+  the two mechanisms needing genuinely different shapes is itself part
+  of the finding, not an implementation detail.
+- **The write-then-mark ordering discipline transfers directly, and
+  that's the reassuring half.** `ingestExternalLabResult` commits the
+  effect *before* calling `store.markProcessed`, the same "durable
+  action before durable acknowledgment" principle `outboxRelay.ts`
+  established for its cursor — a crash between the two means the
+  message looks unprocessed on redelivery and gets retried, never
+  silently dropped. That this discipline ports unchanged to a
+  structurally different store is evidence it's a real principle, not
+  an accident of how `OutboxCursor` happened to be built.
+- **The domain's own state check is a second, independent safety net —
+  proven, not just asserted.** `tests/integration/externalLabResultAdapter.test.ts`'s
+  belt-and-suspenders test deliberately leaves the idempotency store
+  behind reality (commits an effect, skips `markProcessed`, simulating
+  a crash between them) and confirms redelivery still lands safely: it
+  re-attempts the domain operation for real, which `reportLabResultHandler`
+  rejects with `LabOrderNotPending` because the order is already
+  `resulted`. The message-ID store optimizes the common case (skip
+  before touching domain state at all); the domain's own invariant
+  checks are what make it safe even when that optimization's own
+  bookkeeping is the thing that's out of sync.
+- **What this doesn't prove:** nothing about actually parsing HL7v2
+  segments, FHIR resources, or DICOM metadata into `ExternalLabResultMessage`'s
+  shape, and nothing about a live connection's ACK/NAK handshake,
+  retry/backoff, or a device being offline. Those remain real,
+  necessary, unglamorous engineering for an actual integration, with no
+  generalizable pattern-claim behind them — building a toy version of
+  either would not have taught this codebase anything a small, focused
+  idempotency exercise didn't already cover.
