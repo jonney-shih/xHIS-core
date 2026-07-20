@@ -112,10 +112,12 @@ question with its own failure modes (a missed event silently breaking a
 domain's invariant, in particular), not something resolved by containing
 non-determinism within either domain individually. `src/integration/
 patientToBed.ts` is the first concrete instance — `EncounterAdmitted`
-triggering `AssignBed` — and it's deliberately honest about not solving
-that failure mode: it's in-process and synchronous, not durable
-messaging, and doesn't implement saga/compensation semantics for a batch
-where one admission gets a bed and another in the same batch doesn't.
+triggering `AssignBed`, and `EncounterDischarged` triggering `ReleaseBed`
+by looking up whichever bed is currently on record for that encounter —
+and it's deliberately honest about not solving that failure mode: it's
+in-process and synchronous, not durable messaging, and doesn't implement
+saga/compensation semantics for a batch where one admission gets a bed
+and another in the same batch doesn't.
 The pattern here is about what has to be true *inside* one domain's
 boundary before its own LLM containment holds; it says nothing about how
 two already-contained domains talk to each other.
