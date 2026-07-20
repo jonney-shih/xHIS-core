@@ -108,16 +108,28 @@ propose actions against it yet.
 Cross-domain integration (e.g. a clinical `EncounterAdmitted` effect
 triggering an ERP-side ledger entry) is a separate concern this document
 deliberately doesn't cover — that's a choreography-vs-orchestration
-question with its own failure modes (a missed event silently breaking a
-domain's invariant, in particular), not something resolved by containing
+question with its own failure modes, not something resolved by containing
 non-determinism within either domain individually. `src/integration/
 patientToBed.ts` is the first concrete instance — `EncounterAdmitted`
 triggering `AssignBed`, and `EncounterDischarged` triggering `ReleaseBed`
-by looking up whichever bed is currently on record for that encounter —
-and it's deliberately honest about not solving that failure mode: it's
-in-process and synchronous, not durable messaging, and doesn't implement
-saga/compensation semantics for a batch where one admission gets a bed
-and another in the same batch doesn't.
+by looking up whichever bed is currently on record for that encounter.
+Reacting directly (`reactToPatientEffects`) is still in-process and
+synchronous, not durable messaging on its own. `src/integration/
+outboxRelay.ts` is what actually closes the "missed event silently
+breaks a domain's invariant" failure mode: it reads the patient domain's
+durable commit log instead of reacting to effects in memory, tracks how
+far it's gotten with a durable `OutboxCursor` (`src/core/io/outboxCursor.ts`),
+and commits each entry's bed effects *before* advancing the cursor past
+it — so a crash between the two just means that entry gets redelivered on
+the next run, never silently dropped. That guarantee only holds because
+`reactToPatientEffect`'s `EncounterAdmitted` case checks for an existing
+assignment before selecting a bed, making redelivery safe rather than
+merely possible; delivery is at-least-once, and idempotent reactions are
+what make that acceptable instead of dangerous. What's still not
+implemented is saga/compensation semantics: nothing rolls back an
+admission that got no bed, and nothing guarantees one eventually will —
+the cursor advances past a `no-bed-available` outcome too, deliberately,
+so one stuck entry can't block every later one behind it.
 The pattern here is about what has to be true *inside* one domain's
 boundary before its own LLM containment holds; it says nothing about how
 two already-contained domains talk to each other.

@@ -66,6 +66,19 @@ describe('reactToPatientEffect', () => {
     expect(reaction).toEqual({ kind: 'no-bed-available', encounterId: 'encounter-1' });
   });
 
+  it('is idempotent: redelivering an already-assigned admission reports already-assigned instead of selecting a second bed', () => {
+    // Redelivery is exactly what the outbox relay does after a crash —
+    // this proves reacting to the same effect twice never double-books.
+    const reaction = reactToPatientEffect(
+      admitted,
+      bed1OccupiedByEncounter1,
+      EXAMPLE_firstAvailableBedStrategy,
+      bedIsoTimestamp('2026-07-19T00:00:00.000Z'),
+    );
+
+    expect(reaction).toEqual({ kind: 'already-assigned', encounterId: 'encounter-1', bedId: 'bed-1' });
+  });
+
   it('releases the bed holding the discharged encounter', () => {
     const reaction = reactToPatientEffect(
       discharged,

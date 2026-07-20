@@ -1,5 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { appendJsonLine, ensureParentDirectory, readJsonLines } from '../../core/io/jsonLines.js';
 import type { Kinded } from '../../core/execution/kinded.js';
 import type { AuditRecord } from './auditRecord.js';
 import type { CommittedBatch } from './inMemoryShell.js';
@@ -39,7 +38,8 @@ export interface FileShellPaths {
 export function createFileShell<TCtx, TInstruction extends Kinded, TEffect>(
   paths: FileShellPaths,
 ): ImperativeShell<TCtx, TInstruction, TEffect> {
-  ensureParentDirectories(paths);
+  ensureParentDirectory(paths.commitsFile);
+  ensureParentDirectory(paths.auditFile);
 
   return {
     commit(context, effects) {
@@ -73,28 +73,4 @@ export function readAuditLog<TInstruction extends Kinded, TEffect>(
 export function readLatestContext<TCtx>(commitsFile: string): TCtx | undefined {
   const commits = readJsonLines<CommittedBatch<TCtx, unknown>>(commitsFile);
   return commits.length > 0 ? (commits[commits.length - 1]!.context as TCtx) : undefined;
-}
-
-function ensureParentDirectories(paths: FileShellPaths): void {
-  for (const file of [paths.commitsFile, paths.auditFile]) {
-    const dir = dirname(file);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-  }
-}
-
-function appendJsonLine(file: string, value: unknown): void {
-  appendFileSync(file, `${JSON.stringify(value)}\n`, 'utf8');
-}
-
-function readJsonLines<T>(file: string): readonly T[] {
-  if (!existsSync(file)) {
-    return [];
-  }
-
-  return readFileSync(file, 'utf8')
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as T);
 }

@@ -13,15 +13,17 @@ import type { BedSelectionStrategy } from './bedSelection.js';
  * requested or released — this module is the only place that knows about
  * the relationship between the two.
  *
- * This is in-process and synchronous, not durable messaging. If the
- * process crashes between a patient commit and this reaction running,
- * the reaction is simply lost — that's the exact event-reliability gap
- * (an outbox pattern, or at-least-once delivery + idempotent consumers)
- * already flagged as unresolved; nothing here closes it.
+ * Calling this directly is in-process and synchronous, not durable
+ * messaging — see `outboxRelay.ts` for the actual reliability mechanism.
+ * That relay redelivers at least once rather than risk losing a reaction,
+ * which is exactly why the `EncounterAdmitted` case below checks for an
+ * existing assignment before selecting a bed: this function has to be
+ * safe to call twice for the same effect, not just once.
  */
 export type PatientBedReaction =
   | { readonly kind: 'assign'; readonly instruction: Extract<BedInstruction, { kind: 'AssignBed' }> }
   | { readonly kind: 'release'; readonly instruction: Extract<BedInstruction, { kind: 'ReleaseBed' }> }
+  | { readonly kind: 'already-assigned'; readonly encounterId: EncounterId; readonly bedId: BedId }
   | { readonly kind: 'no-bed-available'; readonly encounterId: EncounterId }
   | { readonly kind: 'no-bed-to-release'; readonly encounterId: EncounterId }
   | { readonly kind: 'ambiguous-bed-assignment'; readonly encounterId: EncounterId; readonly bedIds: readonly BedId[] };
@@ -37,6 +39,17 @@ export type PatientBedReaction =
  * patient effect has a bed-management reaction. If a third `PatientEffect`
  * variant is ever added, this switch stops compiling until someone
  * decides what it should do here, rather than silently doing nothing.
+ *
+ * `EncounterAdmitted` checks `findBedHoldingEncounter` *before* selecting
+ * a bed, specifically for redelivery safety: without this check, calling
+ * this twice for the same admission (which `outboxRelay.ts` can do after
+ * a crash) would select a *second* available bed for an encounter that
+ * already has one, rather than recognizing the first assignment already
+ * satisfied this effect. `EncounterDischarged` doesn't need an equivalent
+ * check — it's already lookup-driven, not selection-driven, so a
+ * redelivered discharge for an already-released encounter naturally
+ * finds nothing to release (`no-bed-to-release`) instead of doing
+ * anything harmful.
  */
 export function reactToPatientEffect(
   effect: PatientEffect,
@@ -46,6 +59,15 @@ export function reactToPatientEffect(
 ): PatientBedReaction {
   switch (effect.kind) {
     case 'EncounterAdmitted': {
+      const existing = findBedHoldingEncounter(bedContext, effect.encounterId);
+
+      if (existing.kind === 'found') {
+        return { kind: 'already-assigned', encounterId: effect.encounterId, bedId: existing.bedId };
+      }
+      if (existing.kind === 'ambiguous') {
+        return { kind: 'ambiguous-bed-assignment', encounterId: effect.encounterId, bedIds: existing.bedIds };
+      }
+
       const selectedBedId = strategy.selectAvailableBed(bedContext);
 
       if (!selectedBedId) {
@@ -61,6 +83,12 @@ export function reactToPatientEffect(
       const lookup = findBedHoldingEncounter(bedContext, effect.encounterId);
 
       switch (lookup.kind) {
+        // Covers two situations this context snapshot alone can't tell
+        // apart: this encounter never got a bed at all, or it did and a
+        // prior (possibly redelivered) reaction already released it.
+        // Both end the same way — nothing left to release — so neither
+        // needs distinguishing for correctness, only for observability
+        // if someone later wants it.
         case 'not-found':
           return { kind: 'no-bed-to-release', encounterId: effect.encounterId };
         case 'ambiguous':
@@ -75,6 +103,7 @@ export function reactToPatientEffect(
 export type PatientBedReactionOutcome =
   | { readonly kind: 'assigned'; readonly encounterId: EncounterId; readonly bedId: BedId }
   | { readonly kind: 'released'; readonly encounterId: EncounterId; readonly bedId: BedId }
+  | { readonly kind: 'already-assigned'; readonly encounterId: EncounterId; readonly bedId: BedId }
   | { readonly kind: 'no-bed-available'; readonly encounterId: EncounterId }
   | { readonly kind: 'no-bed-to-release'; readonly encounterId: EncounterId }
   | { readonly kind: 'ambiguous-bed-assignment'; readonly encounterId: EncounterId; readonly bedIds: readonly BedId[] }
@@ -83,6 +112,13 @@ export type PatientBedReactionOutcome =
 export interface ReactToPatientEffectsResult {
   readonly context: BedContext;
   readonly outcomes: readonly PatientBedReactionOutcome[];
+  /** Every `BedEffect` actually produced by a successful `assign`/`release`
+   * in this batch, in order — `outboxRelay.ts` commits these durably
+   * alongside the resulting `context`; nothing here persists anything
+   * itself. Empty when nothing in the batch resulted in a real bed
+   * transition (e.g. every effect was `already-assigned` or
+   * `no-bed-available`). */
+  readonly effects: readonly BedEffect[];
 }
 
 /** The minimal structural shape this module needs from a bed engine —
@@ -117,11 +153,13 @@ export function reactToPatientEffects(
 ): ReactToPatientEffectsResult {
   let context = bedContext;
   const outcomes: PatientBedReactionOutcome[] = [];
+  const effects: BedEffect[] = [];
 
   for (const effect of patientEffects) {
     const reaction = reactToPatientEffect(effect, context, strategy, timestamp);
 
     switch (reaction.kind) {
+      case 'already-assigned':
       case 'no-bed-available':
       case 'no-bed-to-release':
       case 'ambiguous-bed-assignment':
@@ -137,6 +175,7 @@ export function reactToPatientEffects(
         }
 
         context = result.value.context;
+        effects.push(...result.value.effects);
         outcomes.push(
           reaction.kind === 'assign'
             ? { kind: 'assigned', encounterId: reaction.instruction.encounterId, bedId: reaction.instruction.bedId }
@@ -147,5 +186,5 @@ export function reactToPatientEffects(
     }
   }
 
-  return { context, outcomes };
+  return { context, outcomes, effects };
 }
