@@ -149,3 +149,69 @@ all-or-nothing batches without either mechanism knowing about the other.
 The pattern here is about what has to be true *inside* one domain's
 boundary before its own LLM containment holds; it says nothing about how
 two already-contained domains talk to each other.
+
+## Known boundaries: what this pattern doesn't cover yet at full HIS scale
+
+Two domains (patient, bed) is enough to prove the pattern generalizes; it
+is not enough to have actually hit every problem a full hospital
+information system eventually has to solve — outpatient/inpatient/ER,
+nursing, a lab system, PACS/DICOM, CDSS, remote care. The seven-step
+pattern above still holds for all of these. What follows are specific,
+real gaps that surface once that breadth is actually attempted, named now
+so they read as known boundaries later, not as oversights.
+
+- **Large binary objects (PACS/DICOM) don't fit a plain-JSON context.**
+  Every `ExecutionContext` in this codebase is small, JSON-serializable
+  data, by design (see `docs/ARCHITECTURE.md`'s determinism principle).
+  An imaging study is gigabytes of pixel data — embedding it in a context
+  the same way `PatientContext` embeds encounter records is wrong at any
+  scale. The right shape is almost certainly the same reference-by-ID
+  discipline `src/instructions/bed/ids.ts` already uses for
+  `EncounterId`: the deterministic core tracks *metadata and state*
+  (order placed, study performed, image stored at reference X, report
+  signed), never the bytes themselves, which live in a specialized store
+  referenced by ID. This hasn't needed to exist yet because nothing here
+  has had a large-object domain; it needs to become a stated convention
+  before one shows up, not be improvised in the moment.
+- **External protocol integration is a different kind of boundary than
+  choreography between two of our own domains.** `src/integration/
+  patientToBed.ts` and `outboxRelay.ts` solve reacting to *our own*
+  durable commit log. A lab analyzer, an imaging modality, or a remote
+  monitoring device is a third party speaking its own protocol (HL7v2,
+  FHIR, DICOM), that can be offline, malformed, or simply slow in ways
+  our own domains aren't. The outbox pattern's *principles* — a durable
+  log, a durable cursor, idempotent consumers — generalize to this; the
+  specific adapters (parsing HL7 messages into validated instructions,
+  for instance) do not exist and are real, protocol-specific work, not a
+  variation on `patientToBed.ts`.
+- **N-way choreography doesn't scale as N hand-written pairwise reaction
+  modules.** One integration module for one domain pair (patient→bed) is
+  fine. A real HIS has admission plausibly triggering bed assignment,
+  nursing care-plan creation, lab order review, billing, and CDSS alerts
+  all at once — up to N² hand-written modules for N domains reacting to
+  each other. At that point the pattern probably needs to generalize
+  from "one module reads one other domain's commit log" into something
+  closer to a shared event bus that multiple domains can each
+  independently subscribe to, still keyed by the same durable-cursor
+  idea `OutboxCursor` already proves out for one consumer. Nothing here
+  builds that; it's a real design problem for whenever a third domain
+  needs to react to patient effects, not before.
+- **CDSS is not a new category — it should be treated as another Plan
+  source, not a parallel system.** A clinical decision support
+  recommendation and an LLM's proposal are the same *shape* of problem:
+  something non-deterministic (a model, a rule engine) suggesting an
+  action that has to pass through the same closed-union validation,
+  Check rules, and risk-tiered approval as anything else — not a
+  separate, less-rigorous path just because it "looks like" a rules
+  engine instead of an LLM. This also means CDSS inherits the TFDA SaMD
+  classification question `docs/AGENTIC_LAYER.md`'s Restrictions section
+  already raises for the LLM planner, likely more urgently — CDSS is a
+  well-established SaMD category in its own right.
+- **Remote care's data volume and frequency is a different regime than
+  discrete clinical events.** Continuous vitals streams from a wearable
+  are high-frequency and high-volume in a way admission/discharge events
+  aren't. `outboxRelay.ts`'s "read the whole commit log, process what's
+  new" design has never been evaluated against that kind of load —
+  scaling to it might be fine as-is or might need a different batching
+  or windowing strategy. This is an open performance question, not a
+  correctness one, and isn't resolved here.
