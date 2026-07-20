@@ -691,3 +691,60 @@ of scope, not deferred with guilt.
   generalizable pattern-claim behind them — building a toy version of
   either would not have taught this codebase anything a small, focused
   idempotency exercise didn't already cover.
+
+## Resolved: nursing's credential/role state, split from roster generation
+
+Nursing was deferred early on because it conflates two unrelated
+concerns: credential/role state, and roster generation — the latter
+already tested by `scheduling`'s optimization/feasibility family.
+`src/instructions/nursing` (`IssueCredential`/`RevokeCredential`/`GrantRole`)
+builds and tests only the first half, deliberately excluding shift
+assignment, patient ratios, or anything else a real nursing information
+system would need.
+
+- **Same family, new invariant *shape* within it.** Nursing belongs to
+  the same state/time-precision-plus-regulatory family `patient`/`bed`/`lab`
+  do — not a fourth family. But its invariant is neither a state
+  transition nor a resource-exclusivity check: it's a *gating*
+  relationship between two kinds of state. `grantRoleHandler` doesn't
+  just check `GrantRole`'s own fields; it looks up a *different*
+  entity (the referenced credential) and enforces three conditions
+  against it — same staff member, not revoked, not yet expired —
+  before the grant is allowed to exist at all.
+- **The independent guard check had to be built carefully to avoid
+  testing a tautology.** `tests/instructions/nursing/credentialValidity.guard.test.ts`
+  re-derives "was this credential valid at grant time" from the
+  credential's own write-once fields (`issuedAt`/`expiresAt` never
+  change after issuance; `revokedAt` is set at most once) rather than
+  calling `grantRoleHandler`'s check again — but doing that correctly
+  required generating strictly increasing timestamps so instruction
+  *sequence* order and timestamp *value* order never diverge. Without
+  that, a randomly-generated backdated grant could be correctly rejected
+  by the handler (which reasons about sequence: has this credential
+  already been revoked *by this point in the run*) while the
+  independent checker — reasoning purely about timestamp values —
+  would disagree, producing a false failure unrelated to any actual bug.
+  Both `ledger`'s and `scheduling`'s guards already generated timestamps
+  this way; this is the first domain where skipping that discipline
+  would have silently broken the test's own validity, not just its
+  realism.
+- **This is a first, not-yet-taken step toward closing a named gap, not
+  a claim that the gap is closed.** `AGENTIC_LAYER.md`'s open questions
+  flag `createInMemoryIdentityProvider` as a fixed snapshot with no time
+  dimension and no record of *why* an identity holds a role. This domain
+  is what a real answer could be built on — a real `IdentityProvider`
+  could plausibly derive `Identity.roles` from this domain's committed
+  state instead of a hand-maintained list — but nothing here actually
+  wires the two together. That remains a separate, larger step.
+- **What this doesn't prove:** real nursing credentialing needs far more
+  than this — competency-specific role requirements, unit-level
+  scope-of-practice rules, grace periods for in-progress
+  recredentialing, multi-credential role requirements (e.g. a role
+  needing *both* an active RN license *and* a current unit-specific
+  certification). None of that is here, deliberately, same restraint as
+  every other domain's minimal slice. The claim under test was
+  narrower and now answered: can a *gating* invariant between two kinds
+  of state — not a transition, not a conservation law, not a feasibility
+  constraint — be enforced with the same discipline as the other three
+  shapes already proven. Yes, and it required no change to
+  `core/execution` to do it.
