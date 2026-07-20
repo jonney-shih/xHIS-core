@@ -16,14 +16,25 @@ deterministic output **structurally incapable of reaching committed,
 consequential state** — regardless of what domain-specific correctness
 property that state has to uphold.
 
-Two domains can have completely different "hard cores" — the clinical
-core's invariant is state/timing precision plus regulatory traceability;
-an ERP/HRP core's invariant would be conservation of assets and equity
-(double-entry balance, quantities that can't be created or destroyed
-without an accounted-for transaction) — and still be instances of the
-*same* containment pattern. What varies is the domain-specific invariant
-being protected. What doesn't vary is the shape of the pipeline that
-protects it.
+Two domains can have completely different "hard cores" and still be
+instances of the *same* containment pattern. Three families of "hard
+core" are named throughout this document, and each is what the
+domain-specific step 3 below has to actually prove:
+
+- **State/time-precision plus regulatory traceability** — the clinical
+  core's invariant: resulting state must be an exact, replayable
+  function of the instructions applied to it, with a compliance-grade
+  audit trail.
+- **Conservation** — an ERP/ledger core's invariant: assets and equity
+  balance (double-entry, quantities that can't be created or destroyed
+  without an accounted-for transaction).
+- **Optimization/feasibility** — an OR-scheduling or roster-generation
+  core's invariant: proposed assignments are *feasible* (no resource
+  double-booked, no hard constraint violated), independent of whether
+  they are *optimal*.
+
+What varies is the domain-specific invariant being protected. What
+doesn't vary is the shape of the pipeline that protects it.
 
 ## The pattern
 
@@ -164,6 +175,11 @@ pattern above still holds for all of these. What follows are specific,
 real gaps that surface once that breadth is actually attempted, named now
 so they read as known boundaries later, not as oversights.
 
+**This section was written when only patient and bed existed.** Four
+more domains and a benchmark have since tested most of what's named
+below — each bullet is left as originally written, not quietly
+rewritten, with a pointer added to whatever later section resolved it.
+
 - **Large binary objects (PACS/DICOM) don't fit a plain-JSON context.**
   Every `ExecutionContext` in this codebase is small, JSON-serializable
   data, by design (see `docs/ARCHITECTURE.md`'s determinism principle).
@@ -176,7 +192,9 @@ so they read as known boundaries later, not as oversights.
   signed), never the bytes themselves, which live in a specialized store
   referenced by ID. This hasn't needed to exist yet because nothing here
   has had a large-object domain; it needs to become a stated convention
-  before one shows up, not be improvised in the moment.
+  before one shows up, not be improvised in the moment. See "Resolved:
+  large binary objects (PACS/DICOM reference-by-ID)" below for that
+  convention actually built and tested, not just proposed here.
 - **External protocol integration is a different kind of boundary than
   choreography between two of our own domains.** `src/integration/
   patientToBed.ts` and `outboxRelay.ts` solve reacting to *our own*
@@ -187,7 +205,11 @@ so they read as known boundaries later, not as oversights.
   log, a durable cursor, idempotent consumers — generalize to this; the
   specific adapters (parsing HL7 messages into validated instructions,
   for instance) do not exist and are real, protocol-specific work, not a
-  variation on `patientToBed.ts`.
+  variation on `patientToBed.ts`. See "Resolved: message-ID idempotency
+  for external protocol integration" below for the one mechanism inside
+  this boundary that turned out to be worth testing, and for why the
+  rest of it — the parsing, the connection liveness — deliberately
+  wasn't.
 - **N-way choreography doesn't scale as N hand-written pairwise reaction
   modules.** One integration module for one domain pair (patient→bed) is
   fine; a real HIS has several domains all potentially reacting to each
@@ -204,7 +226,9 @@ so they read as known boundaries later, not as oversights.
   engine instead of an LLM. This also means CDSS inherits the TFDA SaMD
   classification question `docs/AGENTIC_LAYER.md`'s Restrictions section
   already raises for the LLM planner, likely more urgently — CDSS is a
-  well-established SaMD category in its own right.
+  well-established SaMD category in its own right. See "Resolved: CDSS
+  as a Plan source" below for a second, non-LLM planner actually built
+  to check this claim against, rather than just asserting it.
 - **Remote care's data volume and frequency is a different regime than
   discrete clinical events.** Continuous vitals streams from a wearable
   are high-frequency and high-volume in a way admission/discharge events
@@ -212,7 +236,9 @@ so they read as known boundaries later, not as oversights.
   new" design has never been evaluated against that kind of load —
   scaling to it might be fine as-is or might need a different batching
   or windowing strategy. This is an open performance question, not a
-  correctness one, and isn't resolved here.
+  correctness one, and wasn't resolved *here* — see "Resolved: remote
+  care data volume (benchmarked)" below for the measurement that
+  replaced "might be fine as-is" with an actual number.
 
 ## Event bus vs. federated subscription (deferred)
 
@@ -349,10 +375,10 @@ clinical/business rules live.
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
 same "hard core" family: state/time-precision plus regulatory
 traceability, where the invariant is either exact replay or "don't
-double-book a resource." That left the thesis's other named family
-untested: **conservation** — the double-entry-balance shape this
-document used as its running counterexample from the very first
-section, but never actually built. `src/instructions/ledger` (two
+double-book a resource." That left two of the thesis's other named
+families untested; this closes one of them: **conservation** — the
+double-entry-balance shape this document used as its running
+counterexample from the very first section, but never actually built. `src/instructions/ledger` (two
 instructions, `PostEntry`/`ReverseEntry`) closes that gap.
 
 - **Step 3, the one step the thesis said would vary, did vary — and
