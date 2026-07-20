@@ -4,8 +4,26 @@ import type { IsoTimestamp } from '../instructions/bed/ids.js';
 import type { BedContext, BedEffect } from '../instructions/bed/types.js';
 import type { PatientContext, PatientEffect } from '../instructions/patient/types.js';
 import type { BedSelectionStrategy } from './bedSelection.js';
-import type { BedEngineLike, PatientBedReactionOutcome } from './patientToBed.js';
+import type { BedEngineLike, PatientBedReactionOutcome, ReactToPatientEffectsResult } from './patientToBed.js';
 import { reactToPatientEffects } from './patientToBed.js';
+
+/**
+ * What this relay needs to react to one batch — `reactToPatientEffects`
+ * by default (best-effort), or `reactToPatientEffectsAsSaga` bound to a
+ * `SagaPolicy` (`patientBedSaga.ts`) for all-or-nothing batches. A
+ * `SagaResult` satisfies this structurally (it's a `ReactToPatientEffectsResult`
+ * plus an optional `compensation` field), so passing a saga-wrapped
+ * reactor here needs no change to this relay at all — reliable delivery
+ * and all-or-nothing batches are two independent, freely composable
+ * concerns, not one feature.
+ */
+export type PatientBedReactor = (
+  bedEngine: BedEngineLike,
+  bedContext: BedContext,
+  patientEffects: readonly PatientEffect[],
+  strategy: BedSelectionStrategy,
+  timestamp: IsoTimestamp,
+) => ReactToPatientEffectsResult;
 
 /** The minimal shape this relay needs to durably persist a bed reaction —
  * deliberately not the agentic `ImperativeShell`, since that interface's
@@ -51,9 +69,10 @@ export interface RelayPatientEffectsToBedResult {
  * a success guarantee. A `no-bed-available` or `reaction-failed` outcome
  * is still returned to the caller; retrying it automatically by holding
  * the cursor back would block every later entry behind one stuck one,
- * which is a worse failure mode than surfacing it and moving on. Turning
- * this into a guarantee that every admission eventually gets a bed would
- * be a saga, which this deliberately still isn't.
+ * which is a worse failure mode than surfacing it and moving on. This
+ * still doesn't guarantee every admission *eventually* gets a bed across
+ * the whole relay run — only `react`, if it's a saga-wrapped reactor,
+ * guarantees one *batch*'s own steps are all-or-nothing.
  */
 export function relayPatientEffectsToBed(
   patientCommitsFile: string,
@@ -63,6 +82,7 @@ export function relayPatientEffectsToBed(
   bedContext: BedContext,
   strategy: BedSelectionStrategy,
   timestamp: IsoTimestamp,
+  react: PatientBedReactor = reactToPatientEffects,
 ): RelayPatientEffectsToBedResult {
   const commits = readCommits<PatientContext, PatientEffect>(patientCommitsFile);
   const startIndex = cursor.read();
@@ -73,7 +93,7 @@ export function relayPatientEffectsToBed(
 
   for (let index = startIndex; index < commits.length; index += 1) {
     const commit = commits[index]!;
-    const result = reactToPatientEffects(bedEngine, context, commit.effects, strategy, timestamp);
+    const result = react(bedEngine, context, commit.effects, strategy, timestamp);
 
     context = result.context;
     outcomes.push(...result.outcomes);

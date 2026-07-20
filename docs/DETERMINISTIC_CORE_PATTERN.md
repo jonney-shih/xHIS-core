@@ -125,11 +125,27 @@ the next run, never silently dropped. That guarantee only holds because
 `reactToPatientEffect`'s `EncounterAdmitted` case checks for an existing
 assignment before selecting a bed, making redelivery safe rather than
 merely possible; delivery is at-least-once, and idempotent reactions are
-what make that acceptable instead of dangerous. What's still not
-implemented is saga/compensation semantics: nothing rolls back an
-admission that got no bed, and nothing guarantees one eventually will —
-the cursor advances past a `no-bed-available` outcome too, deliberately,
-so one stuck entry can't block every later one behind it.
+what make that acceptable instead of dangerous.
+
+Saga/compensation semantics are `src/integration/patientBedSaga.ts`'s
+job, layered on top rather than built into either
+`reactToPatientEffects` or the relay: `reactToPatientEffectsAsSaga` wraps
+one batch with all-or-nothing semantics — a `SagaPolicy` decides which
+outcomes count as a real failure (not a benign redelivery no-op like
+`already-assigned`), and on a real failure, every successful reaction
+earlier in that same batch gets compensated in reverse (a release for
+each assignment, a re-assignment for each release). This is scoped to
+*one batch*, not to "every admission across all of history eventually
+gets a bed" — that would be a much bigger guarantee than compensating
+one transaction's own steps. The relay still advances its cursor past a
+compensated batch just like an uncompensated `no-bed-available` — a
+compensated batch's net effect on state is a no-op, so redelivering it
+after a crash re-attempts from the same starting point rather than
+compounding a partial one. The two concerns compose freely:
+`relayPatientEffectsToBed` takes any reactor with `reactToPatientEffects`'s
+shape, so passing a saga-wrapped one gets reliable delivery *and*
+all-or-nothing batches without either mechanism knowing about the other.
+
 The pattern here is about what has to be true *inside* one domain's
 boundary before its own LLM containment holds; it says nothing about how
 two already-contained domains talk to each other.

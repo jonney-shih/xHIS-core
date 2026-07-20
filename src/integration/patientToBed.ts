@@ -135,14 +135,13 @@ export interface BedEngineLike {
  * Processes every patient effect independently and best-effort: one
  * failed, unavailable, or ambiguous bed reaction doesn't block the rest
  * of the batch, and every outcome — including failure — is reported,
- * never swallowed. Does *not* implement saga/compensation semantics: if
- * this runs against a batch where one admission gets a bed and a later
- * one in the same batch doesn't, nothing here rolls the first one back.
- * Whether "admitted with no bed" (or "discharged with no bed to
- * release") should instead be prevented earlier — a stronger, saga-level
- * guarantee on the triggering instruction itself, per the choreography-
- * vs-saga discussion this integration follows — is a real design
- * question this module deliberately leaves open rather than deciding.
+ * never swallowed. Does *not* itself implement saga/compensation
+ * semantics: if this runs against a batch where one admission gets a bed
+ * and a later one in the same batch doesn't, nothing *here* rolls the
+ * first one back — that's `patientBedSaga.ts`'s `reactToPatientEffectsAsSaga`,
+ * layered on top of this function rather than built into it, so best-
+ * effort and all-or-nothing stay two independently choosable behaviors
+ * instead of one hardcoded policy.
  */
 export function reactToPatientEffects(
   bedEngine: BedEngineLike,

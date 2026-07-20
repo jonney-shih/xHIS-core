@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFileOutboxCursor } from '../../src/core/io/outboxCursor.js';
 import { EXAMPLE_firstAvailableBedStrategy } from '../../src/integration/bedSelection.js';
+import { EXAMPLE_allOrNothingSagaPolicy, reactToPatientEffectsAsSaga } from '../../src/integration/patientBedSaga.js';
 import { relayPatientEffectsToBed } from '../../src/integration/outboxRelay.js';
 import { createFileShell, readCommits } from '../../src/agentic/shell/fileShell.js';
 import { bedEngine } from '../../src/instructions/bed/engine.js';
@@ -179,5 +180,42 @@ describe('relayPatientEffectsToBed', () => {
     expect(result.outcomes).toEqual([{ kind: 'no-bed-available', encounterId: 'encounter-1' }]);
     expect(result.processedThroughIndex).toBe(1); // still advanced — not stuck retrying forever
     expect(readCommits(bedCommitsFile)).toEqual([]); // nothing to commit — no bed effect was produced
+  });
+
+  it('composes with a saga-wrapped reactor: a compensated batch still durably commits its net effect and still advances the cursor', () => {
+    commitPatientInstructions({ encounters: {} }, [
+      { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
+      { kind: 'AdmitPatient', patientId: patientId('patient-2'), encounterId: encounterId('encounter-2'), admittedAt: isoTimestamp('2026-07-18T00:05:00.000Z') },
+    ]);
+
+    const oneAvailableBed: BedContext = { beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } } };
+
+    const result = relayPatientEffectsToBed(
+      patientCommitsFile,
+      createFileOutboxCursor(cursorFile),
+      bedShell(),
+      bedEngine,
+      oneAvailableBed,
+      EXAMPLE_firstAvailableBedStrategy,
+      bedIsoTimestamp('2026-07-18T00:06:00.000Z'),
+      (engine, context, effects, strategy, timestamp) =>
+        reactToPatientEffectsAsSaga(engine, context, effects, strategy, timestamp, EXAMPLE_allOrNothingSagaPolicy),
+    );
+
+    // Reliable delivery (this relay) and all-or-nothing batches (the
+    // saga) compose without either needing to know about the other.
+    expect(result.outcomes).toEqual([
+      { kind: 'assigned', encounterId: 'encounter-1', bedId: 'bed-1' },
+      { kind: 'no-bed-available', encounterId: 'encounter-2' },
+    ]);
+    expect(result.processedThroughIndex).toBe(1);
+    expect(result.context).toEqual(oneAvailableBed); // compensated back to the starting state
+    // The bed commit log captures the *whole* story, assignment and its
+    // compensation both, not just the net-zero end state — the audit
+    // trail this codebase cares about throughout is about what actually
+    // happened, not just where things ended up.
+    const committed = readCommits<BedContext, BedEffect>(bedCommitsFile);
+    expect(committed).toHaveLength(1);
+    expect(committed[0]!.effects.map((effect) => effect.kind)).toEqual(['BedAssigned', 'BedReleased']);
   });
 });
