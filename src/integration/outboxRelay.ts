@@ -1,5 +1,5 @@
 import type { OutboxCursor } from '../core/io/outboxCursor.js';
-import { readCommits } from '../agentic/shell/fileShell.js';
+import { relayEffects } from '../core/io/relay.js';
 import type { IsoTimestamp } from '../instructions/bed/ids.js';
 import type { BedContext, BedEffect } from '../instructions/bed/types.js';
 import type { PatientContext, PatientEffect } from '../instructions/patient/types.js';
@@ -73,6 +73,11 @@ export interface RelayPatientEffectsToBedResult {
  * still doesn't guarantee every admission *eventually* gets a bed across
  * the whole relay run — only `react`, if it's a saga-wrapped reactor,
  * guarantees one *batch*'s own steps are all-or-nothing.
+ *
+ * The loop itself lives in `core/io/relay.ts`'s domain-agnostic
+ * `relayEffects` — this function is now a thin, bed-specific binding of
+ * it: closing `react` over `bedEngine`/`strategy`/`timestamp` so
+ * `relayEffects` never needs to know bed exists.
  */
 export function relayPatientEffectsToBed(
   patientCommitsFile: string,
@@ -84,27 +89,11 @@ export function relayPatientEffectsToBed(
   timestamp: IsoTimestamp,
   react: PatientBedReactor = reactToPatientEffects,
 ): RelayPatientEffectsToBedResult {
-  const commits = readCommits<PatientContext, PatientEffect>(patientCommitsFile);
-  const startIndex = cursor.read();
-
-  let context = bedContext;
-  const outcomes: PatientBedReactionOutcome[] = [];
-  let processedThroughIndex = startIndex;
-
-  for (let index = startIndex; index < commits.length; index += 1) {
-    const commit = commits[index]!;
-    const result = react(bedEngine, context, commit.effects, strategy, timestamp);
-
-    context = result.context;
-    outcomes.push(...result.outcomes);
-
-    if (result.effects.length > 0) {
-      bedCommitter.commit(result.context, result.effects);
-    }
-
-    processedThroughIndex = index + 1;
-    cursor.advance(processedThroughIndex);
-  }
-
-  return { context, outcomes, processedThroughIndex };
+  return relayEffects<PatientContext, PatientEffect, BedContext, PatientBedReactionOutcome, BedEffect>(
+    patientCommitsFile,
+    cursor,
+    bedCommitter,
+    bedContext,
+    (context, effects) => react(bedEngine, context, effects, strategy, timestamp),
+  );
 }

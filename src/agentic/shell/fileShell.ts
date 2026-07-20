@@ -1,8 +1,11 @@
 import { appendJsonLine, ensureParentDirectory, readJsonLines } from '../../core/io/jsonLines.js';
+import type { CommittedBatch } from '../../core/io/commitLog.js';
 import type { Kinded } from '../../core/execution/kinded.js';
 import type { AuditRecord } from './auditRecord.js';
-import type { CommittedBatch } from './inMemoryShell.js';
 import type { ImperativeShell } from './shell.js';
+
+/** Re-exported, not defined here — see `core/io/commitLog.ts` for why. */
+export { readCommits } from '../../core/io/commitLog.js';
 
 export interface FileShellPaths {
   readonly commitsFile: string;
@@ -49,11 +52,6 @@ export function createFileShell<TCtx, TInstruction extends Kinded, TEffect>(
       appendJsonLine(paths.auditFile, record);
     },
   };
-}
-
-/** Reads every committed `{context, effects}` batch, oldest first. */
-export function readCommits<TCtx, TEffect>(commitsFile: string): readonly CommittedBatch<TCtx, TEffect>[] {
-  return readJsonLines<CommittedBatch<TCtx, TEffect>>(commitsFile);
 }
 
 /** Reads every audit record, oldest first. */

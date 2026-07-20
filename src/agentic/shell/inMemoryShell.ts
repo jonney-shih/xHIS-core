@@ -2,10 +2,9 @@ import type { Kinded } from '../../core/execution/kinded.js';
 import type { AuditRecord } from './auditRecord.js';
 import type { ImperativeShell } from './shell.js';
 
-export interface CommittedBatch<TCtx, TEffect> {
-  readonly context: TCtx;
-  readonly effects: readonly TEffect[];
-}
+/** Re-exported, not defined here — see `core/io/commitLog.ts` for why. */
+export type { CommittedBatch } from '../../core/io/commitLog.js';
+import type { CommittedBatch } from '../../core/io/commitLog.js';
 
 /**
  * Records commits and audit entries in memory instead of performing real

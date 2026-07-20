@@ -282,5 +282,60 @@ bus case is ready to resolve the same way — the trigger is a real third
 subscriber showing up, not the mere existence of a relocated type. The
 design above is deliberately detailed enough that building it later
 shouldn't require rediscovering this reasoning — just acting on it once
-a third domain actually needs to subscribe to
-something.
+a third domain actually needs to subscribe to something.
+
+## Resolved: the third subscriber, and what it actually proved
+
+A third domain (`lab`, chosen over `nursing` — nursing conflates
+credential/role state and roster-generation, two unrelated concerns
+better tested separately, see `docs/AGENTIC_LAYER.md`) was built and
+wired into the choreography specifically to stop reasoning about this
+hypothetically. `src/integration/patientToLab.ts` reacts to
+`EncounterDischarged` by cancelling every still-pending lab order for
+that encounter, and `src/integration/outboxRelayLab.ts` relays it
+through the same durable, redelivery-safe mechanism `outboxRelay.ts`
+already gave bed. The predictions above held, precisely:
+
+- **What generalized:** `readCommits`/`CommittedBatch` relocated from
+  `agentic/shell/fileShell.ts` to `core/io/commitLog.ts` (re-exported
+  from their old home for existing callers), and the relay loop itself —
+  read the source log, ask a durable cursor where it left off, run
+  `react`, commit the result *before* advancing the cursor — was
+  extracted into `core/io/relay.ts`'s `relayEffects`. Both
+  `relayPatientEffectsToBed` and the new `relayPatientEffectsToLab` are
+  now thin bindings of it: each closes `react` over its own engine and
+  whatever domain-specific inputs that reaction needs. `relayEffects`
+  itself imports nothing from `bed`, `lab`, or `patient` — exactly the
+  same domain-agnostic-core split `core/execution` proved twice already.
+- **What didn't, and was never going to:** `patientToLab.ts`'s reaction
+  logic is real, hand-written business logic, not boilerplate — and it
+  is a genuinely different *shape* from `patientToBed.ts`'s, not just a
+  relabeling. Bed's `EncounterAdmitted` reaction makes a one-to-one
+  selection decision (`BedSelectionStrategy` picks *one* bed among
+  several); lab's `EncounterDischarged` reaction is one-to-many with no
+  selection at all (cancel *every* still-pending order, zero policy
+  choice involved). Confirming that `BedSelectionStrategy` was never
+  part of the relay's own shape — only of bed's particular `react`
+  closure — is exactly what proves `relayEffects` is honestly generic
+  rather than accidentally bed-shaped underneath a generic-looking
+  signature.
+- **What stayed federated, on purpose:** there is still no central bus,
+  no registry of subscribers, and no shared "domain effect" type. Lab
+  reads `patientCommitsFile` directly, exactly the way bed does, with
+  its own cursor file and its own relay module. Adding lab required
+  writing one new reaction module and one new ~40-line relay binding —
+  not touching `outboxRelay.ts`, `patientToBed.ts`, or anything bed-
+  specific at all. That is the federated model's promised property
+  (a new subscriber costs a new file, not a shared-resource negotiation)
+  actually holding up under a real second instance, not just a plausible
+  argument for it.
+
+Net conclusion: generalizing the outbox-relay *plumbing* across two real
+consumers was worth doing and cost little (moving two files' worth of
+already-generic code). Generalizing the *choreography* itself — a bus,
+a subscriber registry, a shared reaction interface — would still be
+solving a problem that doesn't exist yet: two relationships is not
+evidence of an N² shape, and the one dimension a bus would need to
+handle generically (differing reaction shapes) is precisely the
+dimension that shouldn't be generic, because it's where the actual
+clinical/business rules live.
