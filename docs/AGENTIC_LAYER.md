@@ -811,3 +811,54 @@ signs off on any of this) rather than merely unbuilt.
   - **Status: not built.** Revisit if a concrete case shows Check
     rejecting something a replan could actually fix (e.g. an oversized
     batch), not as a default addition to the harness.
+- **`act()` never re-validates a proposal's `doOutcome` against the
+  shell's actual latest state before committing — raised directly by a
+  human reviewer asking whether concurrency, ACID, and resource
+  conservation still hold now that six domains sit behind this same
+  pipeline, then confirmed empirically, not just argued.**
+  `tests/agentic/shell/actStaleCommitRace.test.ts` proves it: two
+  `ScheduleBooking` proposals for overlapping time on the same resource
+  both compute Do against the *same* starting snapshot (exactly what
+  happens if one proposal's Do ran while another was still sitting in
+  a human approver's queue — a gap that can span hours) — scheduling's
+  own overlap check finds nothing wrong with either one in isolation,
+  and `act()` commits both. The result isn't merely "two overlapping
+  bookings now coexist" — it's worse: the second `act()` call's
+  `shell.commit()` writes a whole-context replacement computed from a
+  snapshot that never had the first booking in it, so the first
+  proposal's already-committed booking is silently erased, even though
+  its own audit record says `committed`.
+  - **This is a gap in the shell/Act layer, not the deterministic core.**
+    `executeSequence`'s all-or-nothing contract, Plan's validation, and
+    Check's rules are all still sound and don't need to change. What's
+    missing is a seam between Do and Act that re-checks a proposal
+    against the *current* committed state immediately before writing,
+    and fails safely (rather than committing blindly) if the world has
+    moved on since the snapshot the proposal was computed against —
+    optimistic concurrency control, the same shape a real database uses
+    for a compare-and-swap write.
+  - **`ImperativeShell` (`shell.ts`) currently has no way to even ask
+    this question.** `commit()` is fire-and-forget; there is no
+    "read latest state" method on the interface itself (`fileShell.ts`
+    exports a module-level `readLatestContext()`, but nothing in `act()`
+    or `ActInput` calls it, and `createInMemoryShell` has no equivalent
+    at all).
+  - **Ledger and bed have the identical shape, checked against their
+    actual handlers, not assumed by analogy to scheduling.** Ledger's
+    per-entry debit=credit check is self-contained and never at risk —
+    but account balances are a value *derived* by `applyLines` from
+    whatever context was passed in, and `commit()` replaces the whole
+    context wholesale rather than merging, so two `PostEntry` proposals
+    computed from the same stale account balance would have the second
+    commit silently discard the first's contribution to that balance.
+    Bed's `AssignBed`/`ReleaseBed` occupancy check has the same
+    shape — `BedAlreadyOccupied` is checked against whatever snapshot
+    Do ran against, not the shell's actual state at commit time.
+  - **Status: proven, not yet fixed.** The next step, if this gets
+    picked up, is almost certainly extending `ImperativeShell` with a
+    way to read the actual latest committed state and having `act()`
+    re-run `executeSequence` against it immediately before `commit()`,
+    treating a mismatch as a new `CommitOutcome` (e.g. `'stale'`) rather
+    than committing anyway — deliberately not designed here, since the
+    reviewer asked for the gap to be proven empirically first and the
+    fix considered as a separate step.
