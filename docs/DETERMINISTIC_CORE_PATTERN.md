@@ -1212,10 +1212,11 @@ supply `schedulingRiskTiers`, `schedulingInstructionValidators`,
   (Check) → `resolveApprovalForProposal` → `act()` to a real commit,
   plus a malformed-candidate rejection case and the disjoint-role case
   above.
-- **What this doesn't prove:** imaging and nursing still have no
-  agentic-layer integration — four of seven domains now have it, two
-  don't. Nor does it decide real risk tiers or approval policies for a
-  real deployment — `schedulingRiskTiers` and
+- **What this doesn't prove:** at the time this section was written,
+  imaging and nursing still had no agentic-layer integration — four of
+  seven domains had it, two didn't. **Imaging has since been closed
+  too — see below.** Nor does it decide real risk tiers or approval
+  policies for a real deployment — `schedulingRiskTiers` and
   `EXAMPLE_schedulingApprovalPolicy` are exactly as illustrative as
   every other domain's own versions.
 
@@ -1305,3 +1306,70 @@ concern instead of a single domain.
   other open questions describe. Nor does this address multi-process
   file-shell coordination, encryption at rest, or retention — all
   already named as separate, undecided concerns.
+
+## Resolved: imaging's agentic-layer integration
+
+The fifth domain (after `lab`, `bed`, `ledger`, `scheduling`) to get
+real agentic-layer integration.
+`src/agentic/{risk,validation,verification,identity}/imaging.ts` supply
+`imagingRiskTiers`, `imagingInstructionValidators`, `imagingVerifier`,
+and `EXAMPLE_imagingApprovalPolicy`.
+
+- **The first domain whose forward lifecycle has three steps, not two —
+  so the tier split isn't a fixed ratio, it's four independent
+  judgments that happened to land 3-and-1.** `OrderStudy` gets
+  `'review-required'` (correctable via `CancelStudy`, the same shape
+  `AdmitPatient`/`OrderLabTest` get that tier for). `CancelStudy` also
+  gets `'review-required'`, checked against `cancelStudyHandler`
+  directly: it only ever fires while a study is still `'ordered'`,
+  before any image was captured or reported — the same "resolves a
+  still-pending order, nothing clinical happened yet" shape
+  `CancelLabOrder` has, even though (like `CancelBooking`/
+  `ReverseEntry`) it permanently consumes the `studyId`. That fact
+  alone was deliberately *not* treated as sufficient to force the
+  higher tier here — see the next point for why that's not a
+  contradiction of scheduling's reasoning, just a different instruction
+  with a different actual consequence.
+- **`RecordStudyStored` was seriously considered for the top tier and
+  landed on `'review-required'` anyway — the interesting judgment call
+  in this domain.** A wrong `storageRef` really could associate the
+  wrong patient's images with a study, a genuine PACS/RIS safety
+  hazard. What tips it below `ReportStudy` is a structural fact specific
+  to imaging's own modeled lifecycle: a bad `RecordStudyStored` still
+  has one more checkpoint downstream within this domain — the
+  radiologist reading the images before writing `ReportStudy` — that
+  has a real chance to catch a wrong-study mismatch before it reaches a
+  clinical decision. `ReportStudy` has no such checkpoint; it *is* the
+  clinical decision, the same terminal-consequence shape
+  `ReportLabResult`/`DischargePatient` earn their own top tier for. This
+  is the first domain where two *different* instructions were each
+  independently checked against the top-tier bar, and only one of them
+  actually cleared it.
+- **`EXAMPLE_imagingApprovalPolicy`'s top tier is narrower than "any
+  physician," not just narrower than its own lower tier.** Every prior
+  domain's top tier used a generic `'physician'` (or a domain-specific
+  replacement for it, like ledger's `'finance-controller'`). Imaging's
+  is `'radiologist'` specifically — a referring physician can order or
+  cancel a study (`'physician'` appears at `'review-required'`
+  alongside the new `'radiologic-technologist'`), but signing the
+  actual report is a radiologist's job, so `'physician'` is deliberately
+  *not* repeated at `'approval-required'`.
+  `tests/agentic/imaging/imagingAgenticPipelineEndToEnd.test.ts`'s third
+  case proves it: `dr-wu` (`roles: ['physician']`) — sufficient for
+  every prior domain's equivalent top-tier check — is still refused for
+  `ReportStudy`.
+- **Sixth real caller of the domain-agnostic verifier factories.**
+  `imagingVerifier` composes the same three factories every other
+  domain's verifier does.
+- **Proven through the real chain, not just type-checked.**
+  `imagingAgenticPipelineEndToEnd.test.ts` runs a raw, untrusted
+  `OrderStudy` candidate through `toPlanProposal` →
+  `imagingEngine.executeSequence` (Do) → `imagingVerifier` (Check) →
+  `resolveApprovalForProposal` → `act()` to a real commit, plus a
+  malformed-candidate rejection case and the narrower-than-physician
+  case above.
+- **What this doesn't prove:** nursing still has no agentic-layer
+  integration — five of seven domains now have it, one doesn't. Nor
+  does it decide real risk tiers or approval policies for a real
+  deployment — `imagingRiskTiers` and `EXAMPLE_imagingApprovalPolicy`
+  are exactly as illustrative as every other domain's own versions.
