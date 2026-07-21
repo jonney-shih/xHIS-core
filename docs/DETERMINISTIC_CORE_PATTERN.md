@@ -986,3 +986,65 @@ section named as a plausible next step, now actually built.
   domain's worth of identity — a real deployment's actual staff
   registry, SSO, or LDAP/AD directory is still the real
   `IdentityProvider` most institutions would actually need.
+
+## Resolved: lab's agentic-layer integration
+
+A synthesis question — "given the seven domains that exist, what's the
+highest-value gap?" — surfaced something the domain-by-domain narrative
+above never said out loud: every piece of Plan→Do→Check→Act
+infrastructure (`RiskTierRegistry`, `InstructionValidatorRegistry`,
+`Verifier`, `ApprovalPolicy`) existed *only* for `patient`. Six domains
+proved `core/execution` and the planner shape both generalize; none of
+them proved the containment *pipeline itself* generalizes across
+domains, which is the more important axis for what this system is
+actually for — an LLM or CDSS could never have proposed anything
+outside `AdmitPatient`/`DischargePatient`, no matter how many domains
+existed underneath. `src/agentic/{risk,validation,verification,identity}/lab.ts`
+close that gap for a second domain: `labRiskTiers`, `labInstructionValidators`,
+`labVerifier`, `EXAMPLE_labApprovalPolicy` — the same four pieces
+`patient.ts` has, assembled the same way.
+
+- **The domain-agnostic factories were never actually exercised by a
+  second caller until now.** `createMaxBatchSizeVerifier`,
+  `createRationalePiiScanVerifier`, `createRiskTierVerifier`,
+  `combineVerifiers` — all written generically from the start, but
+  `patient.ts` was their only caller for the whole life of this
+  codebase. `labVerifier` assembling them is the same kind of proof
+  `relayEffects` needed a second real caller for: generic-looking code
+  that's never been called twice isn't provably generic yet, just
+  plausibly so.
+- **Risk tiers had to be reasoned about on their own terms, not copied
+  from patient's.** `ReportLabResult` gets `'approval-required'` —
+  lab's *own* top tier — because a wrong committed result can directly
+  drive a wrong clinical decision downstream, the same terminal-
+  consequence shape `DischargePatient` has, but for a completely
+  different clinical reason. `OrderLabTest`/`CancelLabOrder` get
+  `'review-required'`, mirroring `AdmitPatient`'s "correctable,
+  lower-consequence" reasoning. Getting a second domain's tiers right
+  meant re-deriving the *reasoning*, not pattern-matching the *shape*
+  of patient's tiers onto different instruction names.
+- **`EXAMPLE_labApprovalPolicy` deliberately doesn't reuse patient's
+  role list wholesale.** It introduces `lab-technologist` — a role
+  patient's own policy never needed — precisely to test whether the
+  approval-policy mechanism actually respects domain-specific role
+  taxonomies or secretly assumes patient's roles are universal.
+  `tests/agentic/lab/labAgenticPipelineEndToEnd.test.ts`'s third case
+  proves it does: a `lab-technologist` identity can approve
+  `OrderLabTest` (`'review-required'`) but is correctly refused for
+  `ReportLabResult` (`'approval-required'`, needs `physician`) —
+  the exact same differentiated-role property `patientRiskTiers`
+  demonstrates between `AdmitPatient` and `DischargePatient`, now
+  shown to hold for a domain whose roles aren't patient's.
+- **Proven through the real chain, not just type-checked.**
+  `labAgenticPipelineEndToEnd.test.ts` runs a raw, untrusted candidate
+  through `toPlanProposal` → `labEngine.executeSequence` (Do) →
+  `labVerifier` (Check) → `resolveApprovalForProposal` → `act()` to a
+  real commit — mirroring `approvalFlow.test.ts`'s depth for patient,
+  now demonstrated for lab specifically, not asserted by analogy.
+- **What this doesn't prove:** the other five domains (bed, ledger,
+  scheduling, imaging, nursing) still have no agentic-layer integration
+  at all — this closes the gap for one additional domain, not the
+  general claim "any domain can trivially get one." Nor does it decide
+  real risk tiers or approval policies for a real deployment — `labRiskTiers`
+  and `EXAMPLE_labApprovalPolicy` are exactly as illustrative as
+  patient's own versions, same restraint, same `EXAMPLE_` discipline.

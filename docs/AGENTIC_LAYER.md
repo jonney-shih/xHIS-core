@@ -406,7 +406,13 @@ src/agentic/
 Each domain (patient, and later orders/medications/...) gets its own risk
 tier registry and, if its planning needs differ, its own planner — mirroring
 how `src/instructions/patient/**` is domain-specific while
-`src/core/execution/**` stays domain-agnostic.
+`src/core/execution/**` stays domain-agnostic. This was aspirational
+until `lab` got the same treatment (`risk`/`validation`/`verification`/`identity`
+`lab.ts` files, mirroring `patient.ts`'s) — see
+`docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: lab's agentic-layer
+integration" for what building a second domain's worth actually
+required. Five domains (bed, ledger, scheduling, imaging, nursing)
+still have none.
 
 ## Minimal vertical slice — implemented
 
