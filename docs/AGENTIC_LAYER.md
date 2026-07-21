@@ -408,16 +408,21 @@ tier registry and, if its planning needs differ, its own planner — mirroring
 how `src/instructions/patient/**` is domain-specific while
 `src/core/execution/**` stays domain-agnostic. This was aspirational
 until `lab`, then `bed`, then `ledger`, then `scheduling`, then
-`imaging` got the same treatment
+`imaging`, then `nursing` got the same treatment
 (`risk`/`validation`/`verification`/`identity`
-`lab.ts`/`bed.ts`/`ledger.ts`/`scheduling.ts`/`imaging.ts` files,
-mirroring `patient.ts`'s) — see `docs/DETERMINISTIC_CORE_PATTERN.md`'s
-"Resolved: lab's agentic-layer integration", "Resolved: bed's
-agentic-layer integration", "Resolved: ledger's agentic-layer
-integration", "Resolved: scheduling's agentic-layer integration", and
-"Resolved: imaging's agentic-layer integration" for what building each
-domain's worth actually required. Nursing is the only domain that
-still has none.
+`lab.ts`/`bed.ts`/`ledger.ts`/`scheduling.ts`/`imaging.ts`/`nursing.ts`
+files, mirroring `patient.ts`'s) — see
+`docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: lab's agentic-layer
+integration", "Resolved: bed's agentic-layer integration", "Resolved:
+ledger's agentic-layer integration", "Resolved: scheduling's
+agentic-layer integration", "Resolved: imaging's agentic-layer
+integration", and "Resolved: nursing's agentic-layer integration" for
+what building each domain's worth actually required. **As of nursing,
+every domain has this treatment — the gap this section originally
+described is fully closed**, though see "Open questions for review"
+below for what building seven domains' worth of it still leaves
+undecided (real risk tiers, real approval policies, who signs off on
+either).
 
 ## Minimal vertical slice — implemented
 

@@ -1368,8 +1368,84 @@ and `EXAMPLE_imagingApprovalPolicy`.
   `resolveApprovalForProposal` → `act()` to a real commit, plus a
   malformed-candidate rejection case and the narrower-than-physician
   case above.
-- **What this doesn't prove:** nursing still has no agentic-layer
-  integration — five of seven domains now have it, one doesn't. Nor
-  does it decide real risk tiers or approval policies for a real
-  deployment — `imagingRiskTiers` and `EXAMPLE_imagingApprovalPolicy`
-  are exactly as illustrative as every other domain's own versions.
+- **What this doesn't prove:** at the time this section was written,
+  nursing still had no agentic-layer integration — five of seven
+  domains had it, one didn't. **Nursing has since been closed too —
+  see below, which closes this gap completely.** Nor does it decide
+  real risk tiers or approval policies for a real deployment —
+  `imagingRiskTiers` and `EXAMPLE_imagingApprovalPolicy` are exactly as
+  illustrative as every other domain's own versions.
+
+## Resolved: nursing's agentic-layer integration
+
+The seventh, and last, domain to get real agentic-layer integration —
+this closes the gap the original synthesis question flagged
+completely: every domain now has its own `RiskTierRegistry`,
+`InstructionValidatorRegistry`, `Verifier`, and `ApprovalPolicy`.
+`src/agentic/{risk,validation,verification,identity}/nursing.ts` supply
+`nursingRiskTiers`, `nursingInstructionValidators`, `nursingVerifier`,
+and `EXAMPLE_nursingApprovalPolicy`.
+
+- **`GrantRole`'s top tier has the strongest justification of any
+  domain so far, and it's a genuinely different kind of justification.**
+  Every other domain's `'approval-required'` instruction is
+  high-consequence *within that domain* (a wrong lab result, a wrong
+  discharge, a wrong ledger reversal, a wrong imaging report). `GrantRole`
+  is different: this domain's own committed state is exactly what a
+  real `IdentityProvider` (`nursingIdentityProvider.ts`) derives *every
+  other domain's* approval authority from. A wrongful grant doesn't
+  just misstate a nursing fact — it can hand out the permission that
+  gates `DischargePatient`, `ReportLabResult`, `ReverseEntry`,
+  `CancelBooking`, or `ReportStudy` anywhere else in the codebase. There
+  is also, deliberately, no `RevokeRoleGrant` instruction at all (see
+  `types.ts`'s own doc comment), so `GrantRole` is unambiguously
+  terminal within this domain. `IssueCredential`/`RevokeCredential`
+  both stay at `'review-required'`: a wrongful revoke doesn't disturb
+  any grant already made (role grants are validated once, at grant
+  time, and stay valid even if the backing credential is later revoked
+  — real institutional credentialing works this way), so it only blocks
+  *future* grants until a fresh credential is issued — an operational
+  nuisance, not the "wrong value drives a wrong clinical decision"
+  shape that would earn it the top tier.
+- **`EXAMPLE_nursingApprovalPolicy` deliberately returns to a *nested*
+  tier shape, in explicit contrast to scheduling's disjoint one.**
+  `'chief-medical-officer'` is a superset of `'review-required'`'s
+  authority (the same "narrower list at the higher tier" shape
+  `patient`/`lab`/`ledger`/`imaging` all use), not a stranger to it the
+  way scheduling's `'or-director'` is to `'scheduling-coordinator'`.
+  Both shapes are legitimate; which one fits depends on whether a
+  domain's real-world roles actually nest (a CMO's authority genuinely
+  subsumes a credentialing officer's) or don't (an OR director's
+  doesn't subsume a scheduling coordinator's) — not on any property of
+  `resolveApprovalForProposal` itself, which was already shown not to
+  assume either shape.
+- **The first domain whose own agentic pipeline was proven against its
+  own real committed state, not a hand-maintained identity list.**
+  Every other domain's end-to-end test used
+  `createInMemoryIdentityProvider` with a fixed roster.
+  `nursingAgenticPipelineEndToEnd.test.ts`'s second case instead builds
+  a `NursingContext` and feeds the *same* context to both
+  `nursingEngine.executeSequence` (as the baseline/latest state a
+  `GrantRole` proposal is checked against) and
+  `createNursingIdentityProvider` (as what the approver's own identity
+  resolves from) — closing, for nursing's own instructions specifically,
+  the loop `nursingIdentityProvider.ts`'s doc comment already closed
+  for *patient's* instructions in
+  `nursingIdentityProviderApprovalFlow.test.ts`. The same test also
+  proves a real, known `credentialing-officer` — not an unknown
+  approver — is still correctly refused for `GrantRole`'s tier.
+- **Seventh, and last, real caller of the domain-agnostic verifier
+  factories.** `nursingVerifier` composes the same three factories
+  every other domain's verifier does — `createMaxBatchSizeVerifier`,
+  `createRationalePiiScanVerifier`, and `createRiskTierVerifier` have
+  now been independently exercised by all seven domains, not just
+  `patient`.
+- **What this doesn't prove:** that a real deployment's actual identity
+  provider, LLM vendor, real risk tiers, and approval-policy sign-off
+  process are designed — every `EXAMPLE_*ApprovalPolicy` and every
+  domain's risk tiers remain exactly as illustrative as `patient`'s own
+  versions always were. Nor does closing this gap address either of
+  the other two gaps the original synthesis question named: a
+  human-initiated `ImperativeShell` path still doesn't exist (see
+  docs/ARCHITECTURE.md and docs/AGENTIC_LAYER.md), and
+  `patientToScheduling.ts` is still missing.
