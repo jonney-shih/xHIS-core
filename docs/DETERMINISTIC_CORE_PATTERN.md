@@ -594,7 +594,7 @@ as a real, tested domain instead of a sentence in a doc.
   long as the reference itself is bounded and that bound is checked, not
   assumed.
 - **An asymmetry with `lab`, spotted after the fact, not designed
-  around — now closed on both halves.** Lab shipped with `CancelLabOrder`
+  around — now closed completely.** Lab shipped with `CancelLabOrder`
   because it was built to test choreography (`patientToLab.ts` needs a
   real instruction to cancel pending orders on discharge). Imaging was
   built later for an unrelated purpose — the reference-by-ID convention
@@ -604,19 +604,26 @@ as a real, tested domain instead of a sentence in a doc.
   while still `'ordered'` (mirroring `CancelLabOrder`'s own
   restriction), reusing `StudyNotOrdered` rather than a new error kind,
   the same way `cancelLabOrderHandler` reuses `LabOrderNotPending`.
-  `src/integration/patientToImaging.ts` closes the other half —
+  `src/integration/patientToImaging.ts` closed the choreography half —
   `reactToPatientEffectsForImaging` mirrors `reactToPatientEffectsForLab`
   field-for-field: no reaction to `EncounterAdmitted`, a one-to-many
   cancel-every-still-pending-study reaction to `EncounterDischarged`,
-  the same best-effort (one failure doesn't block the rest of the
-  batch) and redelivery-safety (a second run against an already-
-  cancelled study finds nothing left to do) properties.
-  `tests/integration/patientToImaging.test.ts` proves it end to end:
-  admit, order two studies, discharge, confirm both get cancelled. What
-  remains unbuilt is the same thing it was for lab at this exact point
-  before `outboxRelayLab.ts` existed — durable relay wiring
-  (`outboxRelayImaging.ts`) so this reaction runs against imaging's
-  durable commit log instead of being called in-process.
+  the same best-effort and redelivery-safety properties.
+  `src/integration/outboxRelayImaging.ts` closes the last piece —
+  `relayPatientEffectsToImaging` mirrors `relayPatientEffectsToLab`
+  exactly: reads the patient domain's durable commit log, tracks
+  progress with a durable cursor, commits imaging effects before
+  advancing past each entry. Notably has no saga-wrapped reactor the
+  way bed's relay optionally does — nothing needed one, since cancelling
+  a study has no compensating "un-cancel" the way an assign/release
+  pair does, confirming that concern really is bed-specific, not
+  something every relay needs. `tests/integration/outboxRelayImaging.test.ts`
+  proves durability end to end: a durably committed discharge produces
+  a durably committed cancellation, redelivers safely if the cursor is
+  ever reset, and a second run with nothing new processes nothing new —
+  the same three properties `outboxRelayLab.test.ts` already proved for
+  lab. Lab and imaging are now symmetric in every respect that matters:
+  instruction, reaction, and durable relay.
 
 ## Resolved: remote care data volume (benchmarked)
 
