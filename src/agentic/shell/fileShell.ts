@@ -51,6 +51,9 @@ export function createFileShell<TCtx, TInstruction extends Kinded, TEffect>(
     recordAudit(record) {
       appendJsonLine(paths.auditFile, record);
     },
+    readLatest() {
+      return readLatestContext<TCtx>(paths.commitsFile);
+    },
   };
 }
 

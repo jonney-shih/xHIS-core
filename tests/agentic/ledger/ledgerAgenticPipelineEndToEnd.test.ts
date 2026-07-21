@@ -74,6 +74,8 @@ describe('ledger agentic pipeline, end to end', () => {
       proposal,
       doOutcome,
       decision,
+      baselineContext: emptyLedgerContext,
+      reexecute: (ctx) => ledgerEngine.executeSequence(ctx, proposal.instructions),
       approval: resolution.approval,
       recordedAt: '2026-07-22T00:05:01.000Z',
     });
@@ -153,7 +155,14 @@ describe('ledger agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, { proposal, doOutcome, decision, recordedAt: '2026-07-22T02:05:01.000Z' });
+    const outcome = act(shell, {
+      proposal,
+      doOutcome,
+      decision,
+      baselineContext: contextWithPostedEntry,
+      reexecute: (ctx) => ledgerEngine.executeSequence(ctx, proposal.instructions),
+      recordedAt: '2026-07-22T02:05:01.000Z',
+    });
 
     expect(outcome).toBe('awaiting-approval');
     expect(shell.commits).toHaveLength(0);

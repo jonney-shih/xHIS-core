@@ -32,5 +32,8 @@ export function createInMemoryShell<TCtx, TInstruction extends Kinded, TEffect>(
     recordAudit(record) {
       auditLog.push(record);
     },
+    readLatest() {
+      return commits.length > 0 ? commits[commits.length - 1]!.context : undefined;
+    },
   };
 }

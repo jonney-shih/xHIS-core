@@ -98,6 +98,8 @@ describe('CDSS planning path, end to end', () => {
       proposal,
       doOutcome,
       decision,
+      baselineContext: emptyPatientContext,
+      reexecute: (ctx) => patientEngine.executeSequence(ctx, proposal.instructions),
       approval: resolution.approval,
       recordedAt: '2026-07-20T00:05:01.000Z',
     });
@@ -139,7 +141,14 @@ describe('CDSS planning path, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<PatientContext, PatientInstruction, PatientEffect>();
-    const outcome = act(shell, { proposal, doOutcome, decision, recordedAt: '2026-07-20T00:05:01.000Z' });
+    const outcome = act(shell, {
+      proposal,
+      doOutcome,
+      decision,
+      baselineContext: emptyPatientContext,
+      reexecute: (ctx) => patientEngine.executeSequence(ctx, proposal.instructions),
+      recordedAt: '2026-07-20T00:05:01.000Z',
+    });
 
     expect(outcome).toBe('awaiting-approval');
     expect(shell.commits).toHaveLength(0);

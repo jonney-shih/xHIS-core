@@ -1218,3 +1218,90 @@ supply `schedulingRiskTiers`, `schedulingInstructionValidators`,
   real deployment — `schedulingRiskTiers` and
   `EXAMPLE_schedulingApprovalPolicy` are exactly as illustrative as
   every other domain's own versions.
+
+## Resolved: optimistic concurrency check before commit
+
+A human reviewer asked, after four domains had been wired into the
+agentic layer, whether concurrency, ACID, and resource conservation
+still held up — not as a rhetorical question, but pointing at
+`act()` specifically. Reading `act.ts`, `shell.ts`,
+`inMemoryShell.ts`, and `fileShell.ts` confirmed a real gap:
+`act()` committed whatever `doOutcome` it was handed, computed
+against a context snapshot that could be arbitrarily stale by the
+time Act actually ran — the whole Plan→Do→Check→**approve**→Act
+chain can span hours across a human-approval wait, and nothing
+re-checked the world hadn't moved on in the meantime.
+
+The reviewer explicitly asked for this to be proven empirically
+*before* any fix was designed — the same discipline every other
+finding in this document follows, just applied to a cross-cutting
+concern instead of a single domain.
+
+- **The proof came first, as its own commit.**
+  `tests/agentic/shell/actStaleCommitRace.test.ts` originally asserted
+  the *broken* behavior: two `ScheduleBooking` proposals for
+  overlapping time on the same resource, both computed against the
+  same starting snapshot, both accepted by `act()` — and the second
+  commit silently erased the first's already-committed booking via a
+  wholesale context replace, despite both audit records claiming
+  `committed`. Only after that test passed (proving the bug, not
+  hypothesizing it) was the fix designed.
+- **The fix is a seam between Do and Act, not a change to the
+  deterministic core.** `executeSequence`'s all-or-nothing contract,
+  Plan's validation, and Check's rules needed nothing — `Verifier`
+  (`verifier.ts`) only ever looks at a `PlanProposal` (instructions and
+  rationale), never at context, so Check's already-computed `decision`
+  can never go stale the way Do's context-dependent computation can.
+  What was missing was optimistic concurrency control: re-derive the
+  proposal's effect against the *actual* latest state immediately
+  before writing, and fail safely rather than commit blindly if that
+  recomputation disagrees with what was originally verified.
+- **`ImperativeShell` gained `readLatest(): TCtx | undefined`.**
+  `createInMemoryShell` tracks the most recently committed context
+  directly; `createFileShell` delegates to the `readLatestContext`
+  helper that already existed but that `act()` never called.
+- **`act()` now re-derives what to commit, rather than trusting what it
+  was handed.** `ActInput` gained `baselineContext` (the fallback for
+  when `shell.readLatest()` reports nothing has ever committed — in
+  that case "latest" and "baseline" are the same context by
+  definition) and `reexecute` (typically
+  `(ctx) => engine.executeSequence(ctx, proposal.instructions)`). Every
+  commit path calls `reexecute(shell.readLatest() ?? baselineContext)`
+  immediately before writing and commits *that* result, discarding the
+  original `doOutcome` entirely once Check has passed. A failure there
+  produces a new `CommitOutcome`, `'stale'` — nothing is written, and
+  the audit record explains why, so the caller knows to re-propose
+  rather than retry the same stale proposal unchanged.
+- **Re-run against the very test that proved the bug, this time proving
+  the fix.** The rewritten `actStaleCommitRace.test.ts` asserts the
+  second proposal above now gets `'stale'`, not `'committed'` — the
+  first booking survives untouched. A second case in the same file
+  proves the fix isn't merely conservative: a proposal for a genuinely
+  unrelated resource, computed from the same stale snapshot, still
+  commits — using the *freshly recomputed* context (which correctly
+  contains both bookings), not its own stale one, which alone would
+  have erased the first booking on write exactly like the bug did.
+- **This closes the race completely for a single process, not just
+  narrows it.** Between `shell.readLatest()` and `shell.commit()`
+  inside one `act()` call, there is no `await` — both are synchronous,
+  and Node's single-threaded event loop cannot preempt synchronous code
+  to run another `act()` call in between. So for `createInMemoryShell`,
+  and for `createFileShell` under the single-writer-process assumption
+  `docs/AGENTIC_LAYER.md` already scopes it to, there is no residual
+  window left for this specific race. Multi-process coordination for
+  `createFileShell` (two OS processes appending to the same files) was
+  already out of scope before this fix and remains so — a different,
+  already-documented problem this change does not attempt to solve.
+- **Checked against ledger and bed's actual handlers, not assumed by
+  analogy.** Both have the identical shape to scheduling's overlap
+  check — `EntryAlreadyExists`/`BedAlreadyOccupied` were being checked
+  against whatever snapshot Do happened to run against, not the shell's
+  real state at commit time — so this fix protects them the same way,
+  with no domain-specific code required; the seam lives entirely in
+  `act()`/`shell.ts`, below every domain.
+- **What this doesn't prove:** that a real deployment's actual identity
+  provider, LLM vendor, and approval-policy sign-off process are
+  designed — those remain exactly as open as `docs/AGENTIC_LAYER.md`'s
+  other open questions describe. Nor does this address multi-process
+  file-shell coordination, encryption at rest, or retention — all
+  already named as separate, undecided concerns.

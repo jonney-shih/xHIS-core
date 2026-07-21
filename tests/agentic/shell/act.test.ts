@@ -27,6 +27,10 @@ function newShell() {
   return createInMemoryShell<PatientContext, PatientInstruction, PatientEffect>();
 }
 
+function reexecute(ctx: PatientContext) {
+  return patientEngine.executeSequence(ctx, proposal.instructions);
+}
+
 describe('act', () => {
   it('commits and records an audit entry when Check accepts', () => {
     const shell = newShell();
@@ -36,6 +40,8 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
+      baselineContext: emptyContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
 
@@ -65,6 +71,8 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['business rule violated'] },
+      baselineContext: emptyContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
 
@@ -81,6 +89,8 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
+      baselineContext: emptyContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
 
@@ -97,6 +107,8 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
+      baselineContext: emptyContext,
+      reexecute,
       approval: { approverId: 'dr-chen', approverRole: 'clinical-approver', approved: true, decidedAt: '2026-07-19T00:05:00.000Z' },
       recordedAt: '2026-07-19T00:05:01.000Z',
     });
@@ -117,6 +129,8 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
+      baselineContext: emptyContext,
+      reexecute,
       approval: { approverId: 'dr-chen', approverRole: 'clinical-approver', approved: false, decidedAt: '2026-07-19T00:05:00.000Z' },
       recordedAt: '2026-07-19T00:05:01.000Z',
     });
@@ -144,6 +158,8 @@ describe('act', () => {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
+      baselineContext: alreadyAdmittedContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
 

@@ -811,11 +811,12 @@ signs off on any of this) rather than merely unbuilt.
   - **Status: not built.** Revisit if a concrete case shows Check
     rejecting something a replan could actually fix (e.g. an oversized
     batch), not as a default addition to the harness.
-- **`act()` never re-validates a proposal's `doOutcome` against the
-  shell's actual latest state before committing — raised directly by a
-  human reviewer asking whether concurrency, ACID, and resource
+- **`act()` used to never re-validate a proposal's `doOutcome` against
+  the shell's actual latest state before committing — raised directly by
+  a human reviewer asking whether concurrency, ACID, and resource
   conservation still hold now that six domains sit behind this same
-  pipeline, then confirmed empirically, not just argued.**
+  pipeline, then confirmed empirically, not just argued. This is now
+  fixed — see the "Status" bullet below.**
   `tests/agentic/shell/actStaleCommitRace.test.ts` proves it: two
   `ScheduleBooking` proposals for overlapping time on the same resource
   both compute Do against the *same* starting snapshot (exactly what
@@ -854,11 +855,22 @@ signs off on any of this) rather than merely unbuilt.
     Bed's `AssignBed`/`ReleaseBed` occupancy check has the same
     shape — `BedAlreadyOccupied` is checked against whatever snapshot
     Do ran against, not the shell's actual state at commit time.
-  - **Status: proven, not yet fixed.** The next step, if this gets
-    picked up, is almost certainly extending `ImperativeShell` with a
-    way to read the actual latest committed state and having `act()`
-    re-run `executeSequence` against it immediately before `commit()`,
-    treating a mismatch as a new `CommitOutcome` (e.g. `'stale'`) rather
-    than committing anyway — deliberately not designed here, since the
-    reviewer asked for the gap to be proven empirically first and the
-    fix considered as a separate step.
+  - **Status: fixed.** `ImperativeShell` (`shell.ts`) now has
+    `readLatest(): TCtx | undefined`, implemented by both
+    `createInMemoryShell` and `createFileShell` (the latter delegating to
+    the already-existing `readLatestContext`). `ActInput` gained two
+    required fields — `baselineContext` (the fallback for when nothing
+    has ever committed) and `reexecute` (typically
+    `(ctx) => engine.executeSequence(ctx, proposal.instructions)`) — and
+    every commit path in `act()` now calls
+    `reexecute(shell.readLatest() ?? baselineContext)` immediately before
+    writing, discarding the original `doOutcome` in favor of whatever
+    that fresh recomputation produces. A failure there yields a new
+    `CommitOutcome`, `'stale'`, and commits nothing — see
+    `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: optimistic
+    concurrency check before commit" for what this proves and why it's a
+    complete fix (not just a narrowed window) for a single process, which
+    covers `createInMemoryShell` entirely and `createFileShell` under the
+    single-writer assumption this document already scopes it to.
+    Multi-process coordination for `createFileShell` remains explicitly
+    out of scope, unchanged from before this fix.

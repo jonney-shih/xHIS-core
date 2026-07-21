@@ -67,6 +67,8 @@ describe('lab agentic pipeline, end to end', () => {
       proposal,
       doOutcome,
       decision,
+      baselineContext: emptyLabContext,
+      reexecute: (ctx) => labEngine.executeSequence(ctx, proposal.instructions),
       approval: resolution.approval,
       recordedAt: '2026-07-22T00:05:01.000Z',
     });
@@ -139,7 +141,14 @@ describe('lab agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LabContext, LabInstruction, LabEffect>();
-    const outcome = act(shell, { proposal, doOutcome, decision, recordedAt: '2026-07-22T01:05:01.000Z' });
+    const outcome = act(shell, {
+      proposal,
+      doOutcome,
+      decision,
+      baselineContext: contextWithPendingOrder,
+      reexecute: (ctx) => labEngine.executeSequence(ctx, proposal.instructions),
+      recordedAt: '2026-07-22T01:05:01.000Z',
+    });
 
     expect(outcome).toBe('awaiting-approval');
     expect(shell.commits).toHaveLength(0);

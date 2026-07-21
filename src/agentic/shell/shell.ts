@@ -15,4 +15,17 @@ import type { AuditRecord } from './auditRecord.js';
 export interface ImperativeShell<TCtx, TInstruction extends Kinded, TEffect> {
   commit(context: TCtx, effects: readonly TEffect[]): void;
   recordAudit(record: AuditRecord<TInstruction, TEffect>): void;
+  /**
+   * The context as of the most recently committed batch, or `undefined`
+   * if nothing has ever been committed. Added so `act()` can re-check a
+   * proposal against reality immediately before writing — see
+   * `act.ts`'s `'stale'` outcome and
+   * `tests/agentic/shell/actStaleCommitRace.test.ts` for the race this
+   * closes: without this, a proposal's Do stage could be computed
+   * against a snapshot that predates another proposal's commit (e.g.
+   * across a human-approval wait that spans hours), and blindly
+   * committing that stale computation would silently overwrite
+   * whatever committed in the meantime.
+   */
+  readLatest(): TCtx | undefined;
 }

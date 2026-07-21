@@ -48,6 +48,10 @@ describe('resolveApproval + act composed end to end', () => {
     return createInMemoryShell<PatientContext, PatientInstruction, PatientEffect>();
   }
 
+  function reexecute(ctx: PatientContext) {
+    return patientEngine.executeSequence(ctx, proposal.instructions);
+  }
+
   it('commits once a verified, permitted identity approves', () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(admittedContext, proposal.instructions);
@@ -64,6 +68,8 @@ describe('resolveApproval + act composed end to end', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
+      baselineContext: admittedContext,
+      reexecute,
       approval: resolution.approval,
       recordedAt: '2026-07-19T00:05:01.000Z',
     });
@@ -89,6 +95,8 @@ describe('resolveApproval + act composed end to end', () => {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
+      baselineContext: admittedContext,
+      reexecute,
       recordedAt: '2026-07-19T00:05:01.000Z',
     });
 

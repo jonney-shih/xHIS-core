@@ -74,6 +74,8 @@ describe('scheduling agentic pipeline, end to end', () => {
       proposal,
       doOutcome,
       decision,
+      baselineContext: emptySchedulingContext,
+      reexecute: (ctx) => schedulingEngine.executeSequence(ctx, proposal.instructions),
       approval: resolution.approval,
       recordedAt: '2026-07-22T00:05:01.000Z',
     });
@@ -148,7 +150,14 @@ describe('scheduling agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<SchedulingContext, SchedulingInstruction, SchedulingEffect>();
-    const outcome = act(shell, { proposal, doOutcome, decision, recordedAt: '2026-07-22T11:05:01.000Z' });
+    const outcome = act(shell, {
+      proposal,
+      doOutcome,
+      decision,
+      baselineContext: contextWithScheduledBooking,
+      reexecute: (ctx) => schedulingEngine.executeSequence(ctx, proposal.instructions),
+      recordedAt: '2026-07-22T11:05:01.000Z',
+    });
 
     expect(outcome).toBe('awaiting-approval');
     expect(shell.commits).toHaveLength(0);

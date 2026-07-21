@@ -44,6 +44,10 @@ describe('act() against createFileShell', () => {
     proposedAt: '2026-07-19T00:00:00.000Z',
   };
 
+  function reexecute(ctx: PatientContext) {
+    return patientEngine.executeSequence(ctx, proposal.instructions);
+  }
+
   it('commits to disk and writes a matching audit record when Check accepts', () => {
     const shell = createFileShell(paths);
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
@@ -52,6 +56,8 @@ describe('act() against createFileShell', () => {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
+      baselineContext: emptyContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
 
@@ -69,6 +75,8 @@ describe('act() against createFileShell', () => {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['business rule violated'] },
+      baselineContext: emptyContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
 
@@ -80,11 +88,20 @@ describe('act() against createFileShell', () => {
   it('accumulates audit records across repeated calls, surviving as separate shell instances would', () => {
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    act(createFileShell(paths), { proposal, doOutcome, decision: { kind: 'accept' }, recordedAt: '2026-07-19T00:00:01.000Z' });
+    act(createFileShell(paths), {
+      proposal,
+      doOutcome,
+      decision: { kind: 'accept' },
+      baselineContext: emptyContext,
+      reexecute,
+      recordedAt: '2026-07-19T00:00:01.000Z',
+    });
     act(createFileShell(paths), {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['second attempt rejected'] },
+      baselineContext: emptyContext,
+      reexecute,
       recordedAt: '2026-07-19T00:00:02.000Z',
     });
 

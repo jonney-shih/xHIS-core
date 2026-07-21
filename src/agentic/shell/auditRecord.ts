@@ -7,9 +7,15 @@ import type { VerifyDecision } from '../verification/verifier.js';
  * `awaiting-approval` is distinct from `rejected`: Check asked for a human
  * decision and none has arrived yet. `act()` may be called again later for
  * the same proposal, this time with an `Approval` attached, to resolve it
- * either way.
+ * either way. `stale` is distinct from both: Check accepted (or a human
+ * approved) and Do's *original* dry run succeeded, but re-running Do
+ * against the shell's actual latest state immediately before commit
+ * failed — something else committed in the meantime that this proposal
+ * now conflicts with. Nothing was written; the caller must re-propose
+ * against current state, not retry the same proposal unchanged. See
+ * `act.ts` and `tests/agentic/shell/actStaleCommitRace.test.ts`.
  */
-export type CommitOutcome = 'committed' | 'rejected' | 'awaiting-approval';
+export type CommitOutcome = 'committed' | 'rejected' | 'awaiting-approval' | 'stale';
 
 /**
  * A human's resolution of a `needs-human-approval` decision, already bound
