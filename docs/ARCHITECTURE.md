@@ -49,6 +49,14 @@ redefined — see `src/instructions/bed/ids.ts`) rather than treating the two
 domains as unrelated, since an encounter is a concept the patient domain
 owns and bed management only ever refers to.
 
+**This was written when patient and bed were the only two consumers.**
+Five more have been built since — `lab`, `ledger`, `scheduling`, `imaging`,
+`nursing` — deliberately spanning different "hard core" problem families
+(state/time-precision, conservation, optimization/feasibility), not just
+adding more of the same shape, and none of them required any change to
+`src/core/execution/**` either. See `docs/DETERMINISTIC_CORE_PATTERN.md`
+for what each one specifically proved.
+
 ## Rules that keep the exhaustiveness guarantee real
 
 TypeScript's structural type system has real footguns here that would
@@ -134,7 +142,13 @@ determinism is.
   same shell is reusable once a human-initiated path needs one too.
 - No HTTP/API layer.
 - No clinical domain modeling beyond the two proof-of-concept instructions
-  (`AdmitPatient`, `DischargePatient`). Real domains (orders, medications,
-  vitals, ...) should follow the same pattern: a closed instruction union, a
-  total handler registry assembled as one `satisfies`-checked literal, an
-  `__typetests__/exhaustiveness.ts` proof, and a `createEngine()` call.
+  (`AdmitPatient`, `DischargePatient`) *in the patient domain itself* —
+  that claim no longer covers the whole codebase, though. `src/instructions/lab`
+  and `src/instructions/imaging`, built later, are clinical domains in
+  their own right (lab orders/results, imaging studies/reports), each
+  kept to the same minimal, proof-of-concept restraint `patient`'s own
+  two instructions use — not a real LIS or PACS. Real domains (orders,
+  medications, vitals, ...) should follow the same pattern: a closed
+  instruction union, a total handler registry assembled as one
+  `satisfies`-checked literal, an `__typetests__/exhaustiveness.ts`
+  proof, and a `createEngine()` call.
