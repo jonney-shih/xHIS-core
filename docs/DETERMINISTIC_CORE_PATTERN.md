@@ -493,9 +493,10 @@ to build a real scheduler.
   to enforce one hard, checkable constraint before anything reaches it.
   All three named families in the original thesis have now each produced
   at least one real, tested domain — state/time-precision plus
-  regulatory traceability already had three (`patient`/`bed`/`lab`) even
-  before this; conservation and optimization/feasibility each have
-  their first here.
+  regulatory traceability already had several even before this (see the
+  thesis's family list; more have joined since, each with its own
+  "Resolved" section below); conservation and optimization/feasibility
+  each have their first here.
 
 ## Resolved: CDSS as a Plan source
 
