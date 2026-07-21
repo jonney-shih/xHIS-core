@@ -1101,9 +1101,65 @@ The second domain (after `lab`) to get real agentic-layer integration.
   real commit against a bed that was actually `'available'` beforehand,
   plus a malformed-candidate rejection case and the role-correctness
   case above.
-- **What this doesn't prove:** ledger, scheduling, imaging, and nursing
-  still have no agentic-layer integration — two of seven domains now
-  have it, five don't. Nor does it decide real risk tiers or approval
-  policies for a real deployment — `bedRiskTiers` and
-  `EXAMPLE_bedApprovalPolicy` are exactly as illustrative as patient's
-  and lab's own versions.
+- **What this doesn't prove:** at the time this section was written,
+  ledger, scheduling, imaging, and nursing still had no agentic-layer
+  integration — two of seven domains had it, five didn't. **Ledger has
+  since been closed too — see the next section.** Nor does it decide
+  real risk tiers or approval policies for a real deployment —
+  `bedRiskTiers` and `EXAMPLE_bedApprovalPolicy` are exactly as
+  illustrative as patient's and lab's own versions.
+
+## Resolved: ledger's agentic-layer integration
+
+The third domain (after `lab`, `bed`) to get real agentic-layer
+integration. `src/agentic/{risk,validation,verification,identity}/ledger.ts`
+supply `ledgerRiskTiers`, `ledgerInstructionValidators`, `ledgerVerifier`,
+and `EXAMPLE_ledgerApprovalPolicy`.
+
+- **Tier split derived from ledger's own instruction set having no
+  inverse for `ReverseEntry`, not copied from anyone else's reasoning.**
+  `PostEntry` gets `'review-required'`: it has a direct in-domain undo
+  (`ReverseEntry`), the same "correctable, lower-consequence" shape
+  `AdmitPatient` and `OrderLabTest` get that tier for. `ReverseEntry`
+  gets `'approval-required'`: there is no `UnreverseEntry`, and a
+  reversed `EntryRecord` never goes back to `posted` — fixing a
+  wrongful reversal means posting a brand-new corrective entry, not
+  undoing the reversal itself. That is the same "terminal within this
+  domain" shape `DischargePatient` and `ReportLabResult` earn their top
+  tier for, but discovered here from ledger's own instruction set
+  (nothing undoes `ReverseEntry`), independently of either.
+- **First array-valued instruction field any validator has had to
+  shape-check.** `PostEntry.lines` is a non-empty array of
+  `{ accountId, direction, amount }` objects — `validatePostEntry`
+  checks each element's shape (non-empty `accountId`, `direction` is
+  exactly `'debit'` or `'credit'`, `amount` is an integer) the same way
+  every other field here gets a shape check, but deliberately does
+  *not* check that debits equal credits — that conservation invariant
+  stays `postEntryHandler`'s job at Do-time, the same validator/handler
+  division of labor `EntryAlreadyExists` and `BedAlreadyOccupied`
+  already establish elsewhere.
+- **`EXAMPLE_ledgerApprovalPolicy` is the first policy drawn from a
+  non-clinical, non-nursing profession.** `'billing-clerk'` and
+  `'finance-controller'` appear in no other domain's policy — patient,
+  lab, and bed's roles are all clinical or nursing; ledger's are
+  finance/billing. `'approval-required'` excludes `'billing-clerk'`,
+  the same "narrower list at the higher tier" shape every prior domain's
+  policy has. `tests/agentic/ledger/ledgerAgenticPipelineEndToEnd.test.ts`'s
+  third case proves it: `clerk-tan` (`roles: ['billing-clerk']`) can
+  approve `PostEntry` but is correctly refused for `ReverseEntry`.
+- **Fourth real caller of the domain-agnostic verifier factories.**
+  `ledgerVerifier` composes the same three factories `patientVerifier`,
+  `labVerifier`, and `bedVerifier` do.
+- **Proven through the real chain, not just type-checked.**
+  `ledgerAgenticPipelineEndToEnd.test.ts` runs a raw, untrusted
+  `PostEntry` candidate through `toPlanProposal` →
+  `ledgerEngine.executeSequence` (Do) → `ledgerVerifier` (Check) →
+  `resolveApprovalForProposal` → `act()` to a real commit that actually
+  updates both account balances, plus a malformed-candidate rejection
+  case and the role-differentiation case above.
+- **What this doesn't prove:** scheduling and imaging and nursing still
+  have no agentic-layer integration — three of seven domains now have
+  it, four don't. Nor does it decide real risk tiers or approval
+  policies for a real deployment — `ledgerRiskTiers` and
+  `EXAMPLE_ledgerApprovalPolicy` are exactly as illustrative as every
+  other domain's own versions.

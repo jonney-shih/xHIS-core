@@ -407,13 +407,13 @@ Each domain (patient, and later orders/medications/...) gets its own risk
 tier registry and, if its planning needs differ, its own planner — mirroring
 how `src/instructions/patient/**` is domain-specific while
 `src/core/execution/**` stays domain-agnostic. This was aspirational
-until `lab` and then `bed` got the same treatment
-(`risk`/`validation`/`verification`/`identity` `lab.ts`/`bed.ts` files,
-mirroring `patient.ts`'s) — see `docs/DETERMINISTIC_CORE_PATTERN.md`'s
-"Resolved: lab's agentic-layer integration" and "Resolved: bed's
-agentic-layer integration" for what building each domain's worth
-actually required. Ledger, scheduling, imaging, and nursing still have
-none.
+until `lab`, then `bed`, then `ledger` got the same treatment
+(`risk`/`validation`/`verification`/`identity` `lab.ts`/`bed.ts`/`ledger.ts`
+files, mirroring `patient.ts`'s) — see `docs/DETERMINISTIC_CORE_PATTERN.md`'s
+"Resolved: lab's agentic-layer integration", "Resolved: bed's
+agentic-layer integration", and "Resolved: ledger's agentic-layer
+integration" for what building each domain's worth actually required.
+Scheduling, imaging, and nursing still have none.
 
 ## Minimal vertical slice — implemented
 
