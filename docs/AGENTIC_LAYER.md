@@ -3,8 +3,14 @@
 This document proposes the design for an **agentic layer**: a component that
 uses an LLM to plan multi-step sequences of `Instruction`s against goals or
 clinical/administrative context, while never weakening the guarantees
-described in [`ARCHITECTURE.md`](ARCHITECTURE.md). It is a proposal for
-review, not yet implemented.
+described in [`ARCHITECTURE.md`](ARCHITECTURE.md). It was a proposal for
+review, not yet implemented, when this document was first written.
+
+**That status is stale — see "Minimal vertical slice — implemented" below.**
+Everything this document originally proposed has since been built and
+tested; this document now serves as the design record and the place its
+open questions and regulatory restrictions live, not a description of a
+still-hypothetical system.
 
 ## Why this needs its own document
 
