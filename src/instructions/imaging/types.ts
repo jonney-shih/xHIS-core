@@ -19,12 +19,13 @@ export interface StudyRecord {
   readonly studyId: StudyId;
   readonly encounterId: EncounterId;
   readonly modality: string;
-  readonly status: 'ordered' | 'performed' | 'reported';
+  readonly status: 'ordered' | 'performed' | 'reported' | 'cancelled';
   readonly orderedAt: IsoTimestamp;
   readonly performedAt?: IsoTimestamp;
   readonly storageRef?: string;
   readonly reportText?: string;
   readonly reportedAt?: IsoTimestamp;
+  readonly cancelledAt?: IsoTimestamp;
 }
 
 /** Plain, JSON-serializable state — see `PatientContext`'s doc comment
@@ -35,11 +36,15 @@ export interface ImagingContext {
 }
 
 /**
- * Three instructions, same restraint as `lab` — specimen-equivalent
+ * Four instructions, same restraint as `lab` — specimen-equivalent
  * concepts (multi-series studies, addenda to a signed report, priors
  * comparison) are real parts of a PACS/RIS lifecycle and deliberately
  * out of scope here, same reasoning `lab/types.ts` already applies to
- * its own domain.
+ * its own domain. `CancelStudy` exists for the same reason `lab`'s
+ * `CancelLabOrder` does — closing the asymmetry docs/DETERMINISTIC_CORE_PATTERN.md
+ * flagged: a still-pending, un-performed study had no way to be
+ * resolved when its encounter is discharged, unlike lab's pending
+ * orders.
  */
 export type ImagingInstruction =
   | {
@@ -60,6 +65,11 @@ export type ImagingInstruction =
       readonly studyId: StudyId;
       readonly reportText: string;
       readonly reportedAt: IsoTimestamp;
+    }
+  | {
+      readonly kind: 'CancelStudy';
+      readonly studyId: StudyId;
+      readonly cancelledAt: IsoTimestamp;
     };
 
 export type ImagingEffect =
@@ -83,6 +93,12 @@ export type ImagingEffect =
       readonly encounterId: EncounterId;
       readonly reportText: string;
       readonly reportedAt: IsoTimestamp;
+    }
+  | {
+      readonly kind: 'StudyCancelled';
+      readonly studyId: StudyId;
+      readonly encounterId: EncounterId;
+      readonly cancelledAt: IsoTimestamp;
     };
 
 export type ImagingError =

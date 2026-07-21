@@ -2,6 +2,7 @@ import type { HandlerRegistry } from '../../../../core/execution/handler.js';
 import type { ImagingContext, ImagingEffect, ImagingError, ImagingInstruction } from '../../types.js';
 import { orderStudyHandler } from '../orderStudy.js';
 import { recordStudyStoredHandler } from '../recordStudyStored.js';
+import { cancelStudyHandler } from '../cancelStudy.js';
 
 /**
  * Not executed — checked by `npm run typecheck` (`tsc --noEmit`). The
@@ -11,6 +12,7 @@ import { recordStudyStoredHandler } from '../recordStudyStored.js';
 const incomplete = {
   OrderStudy: orderStudyHandler,
   RecordStudyStored: recordStudyStoredHandler,
+  CancelStudy: cancelStudyHandler,
   // @ts-expect-error - ReportStudy intentionally omitted to prove the registry is total
 } satisfies HandlerRegistry<ImagingContext, ImagingInstruction, ImagingEffect, ImagingError>;
 

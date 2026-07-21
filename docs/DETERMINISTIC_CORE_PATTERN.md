@@ -593,6 +593,20 @@ as a real, tested domain instead of a sentence in a doc.
   governs references gigabyte-scale data it never touches — yes, as
   long as the reference itself is bounded and that bound is checked, not
   assumed.
+- **An asymmetry with `lab`, spotted after the fact, not designed
+  around.** Lab shipped with `CancelLabOrder` because it was built to
+  test choreography (`patientToLab.ts` needs a real instruction to
+  cancel pending orders on discharge). Imaging was built later for an
+  unrelated purpose — the reference-by-ID convention above — and simply
+  never got the same instruction, leaving a still-pending, un-performed
+  study with no way to be resolved at discharge. `CancelStudy` closes
+  the structural half of that gap: only cancellable while still
+  `'ordered'` (mirroring `CancelLabOrder`'s own restriction), reusing
+  `StudyNotOrdered` rather than a new error kind, the same way
+  `cancelLabOrderHandler` reuses `LabOrderNotPending`. The choreography
+  half — a `patientToImaging.ts` actually reacting to `EncounterDischarged`
+  — is a separate, not-yet-built step; this only makes that step
+  possible, it doesn't do it.
 
 ## Resolved: remote care data volume (benchmarked)
 
