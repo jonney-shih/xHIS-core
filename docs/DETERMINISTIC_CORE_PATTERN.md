@@ -594,19 +594,29 @@ as a real, tested domain instead of a sentence in a doc.
   long as the reference itself is bounded and that bound is checked, not
   assumed.
 - **An asymmetry with `lab`, spotted after the fact, not designed
-  around.** Lab shipped with `CancelLabOrder` because it was built to
-  test choreography (`patientToLab.ts` needs a real instruction to
-  cancel pending orders on discharge). Imaging was built later for an
-  unrelated purpose — the reference-by-ID convention above — and simply
-  never got the same instruction, leaving a still-pending, un-performed
-  study with no way to be resolved at discharge. `CancelStudy` closes
-  the structural half of that gap: only cancellable while still
-  `'ordered'` (mirroring `CancelLabOrder`'s own restriction), reusing
-  `StudyNotOrdered` rather than a new error kind, the same way
-  `cancelLabOrderHandler` reuses `LabOrderNotPending`. The choreography
-  half — a `patientToImaging.ts` actually reacting to `EncounterDischarged`
-  — is a separate, not-yet-built step; this only makes that step
-  possible, it doesn't do it.
+  around — now closed on both halves.** Lab shipped with `CancelLabOrder`
+  because it was built to test choreography (`patientToLab.ts` needs a
+  real instruction to cancel pending orders on discharge). Imaging was
+  built later for an unrelated purpose — the reference-by-ID convention
+  above — and simply never got the same instruction, leaving a
+  still-pending, un-performed study with no way to be resolved at
+  discharge. `CancelStudy` closed the structural half: only cancellable
+  while still `'ordered'` (mirroring `CancelLabOrder`'s own
+  restriction), reusing `StudyNotOrdered` rather than a new error kind,
+  the same way `cancelLabOrderHandler` reuses `LabOrderNotPending`.
+  `src/integration/patientToImaging.ts` closes the other half —
+  `reactToPatientEffectsForImaging` mirrors `reactToPatientEffectsForLab`
+  field-for-field: no reaction to `EncounterAdmitted`, a one-to-many
+  cancel-every-still-pending-study reaction to `EncounterDischarged`,
+  the same best-effort (one failure doesn't block the rest of the
+  batch) and redelivery-safety (a second run against an already-
+  cancelled study finds nothing left to do) properties.
+  `tests/integration/patientToImaging.test.ts` proves it end to end:
+  admit, order two studies, discharge, confirm both get cancelled. What
+  remains unbuilt is the same thing it was for lab at this exact point
+  before `outboxRelayLab.ts` existed — durable relay wiring
+  (`outboxRelayImaging.ts`) so this reaction runs against imaging's
+  durable commit log instead of being called in-process.
 
 ## Resolved: remote care data volume (benchmarked)
 
