@@ -11,10 +11,25 @@ import type { AuditRecord } from './auditRecord.js';
  * separate calls, not one, because an audit record is written on every Act
  * outcome (including rejection), while `commit` is only ever called when
  * `act()` actually decides to commit.
+ *
+ * `TAuditRecord` defaults to `AuditRecord<TInstruction, TEffect>` so every
+ * existing 3-type-argument call site keeps compiling unchanged — added
+ * only so `src/human/actHuman.ts` (the human-initiated counterpart to
+ * `act()`) can supply its own `HumanActionAuditRecord` shape instead of
+ * being forced into the agentic-specific one, while still reusing `commit`
+ * and `readLatest` verbatim. That reuse is the actual claim this document
+ * already made ("nothing about `ImperativeShell` cares where a commit
+ * came from") — this is what makes it true of a second, real caller
+ * instead of just asserted. See `docs/DETERMINISTIC_CORE_PATTERN.md`'s
+ * "Resolved: the human-initiated ImperativeShell path" for what building
+ * that second caller actually required, and what it deliberately still
+ * doesn't decide (whether the two paths should ever share one *audit*
+ * store, not just the same shell mechanism — still open, see
+ * docs/AGENTIC_LAYER.md).
  */
-export interface ImperativeShell<TCtx, TInstruction extends Kinded, TEffect> {
+export interface ImperativeShell<TCtx, TInstruction extends Kinded, TEffect, TAuditRecord = AuditRecord<TInstruction, TEffect>> {
   commit(context: TCtx, effects: readonly TEffect[]): void;
-  recordAudit(record: AuditRecord<TInstruction, TEffect>): void;
+  recordAudit(record: TAuditRecord): void;
   /**
    * The context as of the most recently committed batch, or `undefined`
    * if nothing has ever been committed. Added so `act()` can re-check a

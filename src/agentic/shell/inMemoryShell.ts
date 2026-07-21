@@ -11,17 +11,23 @@ import type { CommittedBatch } from '../../core/io/commitLog.js';
  * I/O. Exists for tests and for exercising Act end-to-end before a real
  * shell (a database, an audit log service, ...) is built — see
  * docs/AGENTIC_LAYER.md.
+ *
+ * `TAuditRecord` defaults to `AuditRecord<TInstruction, TEffect>`, same as
+ * `ImperativeShell` itself — every existing 3-type-argument call site
+ * keeps compiling unchanged; `src/human/actHuman.ts` supplies
+ * `HumanActionAuditRecord` explicitly instead.
  */
-export function createInMemoryShell<TCtx, TInstruction extends Kinded, TEffect>(): ImperativeShell<
+export function createInMemoryShell<
   TCtx,
-  TInstruction,
-  TEffect
-> & {
+  TInstruction extends Kinded,
+  TEffect,
+  TAuditRecord = AuditRecord<TInstruction, TEffect>,
+>(): ImperativeShell<TCtx, TInstruction, TEffect, TAuditRecord> & {
   readonly commits: readonly CommittedBatch<TCtx, TEffect>[];
-  readonly auditLog: readonly AuditRecord<TInstruction, TEffect>[];
+  readonly auditLog: readonly TAuditRecord[];
 } {
   const commits: CommittedBatch<TCtx, TEffect>[] = [];
-  const auditLog: AuditRecord<TInstruction, TEffect>[] = [];
+  const auditLog: TAuditRecord[] = [];
 
   return {
     commits,

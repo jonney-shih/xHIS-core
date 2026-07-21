@@ -38,9 +38,12 @@ export interface FileShellPaths {
  *   silently is a worse failure than a loud crash for something whose
  *   entire purpose is being a trustworthy trail.
  */
-export function createFileShell<TCtx, TInstruction extends Kinded, TEffect>(
-  paths: FileShellPaths,
-): ImperativeShell<TCtx, TInstruction, TEffect> {
+export function createFileShell<
+  TCtx,
+  TInstruction extends Kinded,
+  TEffect,
+  TAuditRecord = AuditRecord<TInstruction, TEffect>,
+>(paths: FileShellPaths): ImperativeShell<TCtx, TInstruction, TEffect, TAuditRecord> {
   ensureParentDirectory(paths.commitsFile);
   ensureParentDirectory(paths.auditFile);
 
@@ -57,11 +60,16 @@ export function createFileShell<TCtx, TInstruction extends Kinded, TEffect>(
   };
 }
 
-/** Reads every audit record, oldest first. */
-export function readAuditLog<TInstruction extends Kinded, TEffect>(
+/**
+ * Reads every audit record, oldest first. `TAuditRecord` defaults to
+ * `AuditRecord<TInstruction, TEffect>`, same as `createFileShell` — pass
+ * `HumanActionAuditRecord<TInstruction, TEffect>` explicitly to read back
+ * a file written by the human-initiated path instead.
+ */
+export function readAuditLog<TInstruction extends Kinded, TEffect, TAuditRecord = AuditRecord<TInstruction, TEffect>>(
   auditFile: string,
-): readonly AuditRecord<TInstruction, TEffect>[] {
-  return readJsonLines<AuditRecord<TInstruction, TEffect>>(auditFile);
+): readonly TAuditRecord[] {
+  return readJsonLines<TAuditRecord>(auditFile);
 }
 
 /**

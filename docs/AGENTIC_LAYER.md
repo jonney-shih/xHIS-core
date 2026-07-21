@@ -584,33 +584,43 @@ signs off on any of this) rather than merely unbuilt.
     says" would hit the same problem the PDPA rule was designed to avoid.
 - Does the audit record for agentic proposals live in the same store as
   effects from human-initiated instructions, or a separate one that's
-  cross-referenced? `createFileShell` doesn't resolve this — it's a
-  reference implementation for the agentic layer specifically, not a
-  design for where the *whole* system's audit trail lives. Affects how
-  "one audit trail" claims hold up under an MOHW review. More concretely:
-  - **There's no human-initiated shell yet to even compare against.**
-    docs/ARCHITECTURE.md already flags that nothing wires `patientEngine`'s
-    own `execute()`/`executeSequence()` output through any
-    `ImperativeShell` for directly human-issued instructions. So "same
-    store or separate" isn't a choice between two existing things today —
-    it's a choice that only becomes real once that shell gets built.
-  - **`ImperativeShell` doesn't force either answer.** The interface has
-    no idea whether its caller is `act()` or a future human-initiated
-    equivalent, so a deployment could point both at the very same
-    `createFileShell(paths)` and get a naturally unified log for free, or
-    deliberately give them separate paths. That choice is already
-    available at wiring time, with no new code needed either way —
-    nobody's made it yet.
-  - **The record *shapes* differ, even if the storage doesn't.**
-    `AuditRecord` carries agent-specific provenance (`proposal.rationale`,
-    `modelVersion`, `promptVersion`, `decision`, `approval`) a human-issued
-    instruction has no equivalent for — though arguably a human order
-    should *also* record who authorized it and why, which is its own,
-    separate undesigned question. Sharing physical storage doesn't by
-    itself answer whether the two should share a common outer "envelope"
-    shape (e.g. a `source: 'human' | 'agent'` discriminant with a
-    per-source payload) so they stay queryable together later even if
-    their payloads differ.
+  cross-referenced? Affects how "one audit trail" claims hold up under
+  an MOHW review. **Still open** — but no longer hypothetical: the
+  human-initiated shell this question used to be blocked on now exists
+  (`src/human/actHuman.ts`), so the actual choice was faced directly,
+  not just reasoned about in the abstract, and here is what got decided
+  versus what's still deliberately left open. More concretely:
+  - **The human-initiated shell now exists, and the comparison this
+    question needed is now real, not hypothetical.**
+    `src/human/actHuman.ts` wires `patientEngine`-shaped `execute()`
+    output through `ImperativeShell` for directly human-issued
+    instructions, exactly as docs/ARCHITECTURE.md's bullet on this
+    called for. That resolves the *precondition* for this question, not
+    the question itself.
+  - **`ImperativeShell` doesn't force either answer — confirmed by the
+    actual implementation, not just argued.** `createFileShell` and
+    `createInMemoryShell` both gained a fourth, defaulted type
+    parameter (`TAuditRecord = AuditRecord<TInstruction, TEffect>`)
+    specifically so a deployment *could* point `act()` and `actHuman()`
+    at the very same `createFileShell(paths)` and get a naturally
+    unified log for free — nothing in `commit()` or `readLatest()`
+    cares which path called them, confirmed by `actHuman()` actually
+    reusing both unmodified. Nobody has actually wired them to the same
+    paths yet, though; that choice is available, not exercised.
+  - **The record *shapes* differ, confirmed rather than just
+    anticipated — and deliberately kept separate, not unified.**
+    `HumanActionAuditRecord` (`src/human/humanActionAuditRecord.ts`) is
+    a genuinely distinct type from `AuditRecord`, not the same shape
+    with placeholder fields: no `proposal.rationale`/`modelVersion`/
+    `promptVersion`/`decision`, since none of that exists when a human
+    issues an instruction directly. The "common outer envelope" idea
+    floated below — a `source: 'human' | 'agent'` discriminant — was
+    considered and deliberately *not* built: doing so now would mean
+    changing `AuditRecord`, `act()`, and every existing agentic test
+    that inspects an audit entry, to answer a question that's about
+    where records are *queried from together* later, not whether either
+    path works today. Still the most likely direction if this gets
+    picked up, just not built yet.
   - **Cross-referencing by data already works; querying across sources
     doesn't.** Every `PatientInstruction` already carries
     `encounterId`/`patientId`, so any record — human- or agent-originated

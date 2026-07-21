@@ -134,12 +134,21 @@ determinism is.
 
 - The **imperative shell** that actually interprets `Effect` values
   (persisting to a database, sending notifications, writing to an audit
-  log) still doesn't exist for instructions issued directly by a human —
-  nothing here wires `patientEngine`'s output through one. A first
-  concrete shell exists for the agentic layer's Act stage
-  (`src/agentic/shell/fileShell.ts` — see docs/AGENTIC_LAYER.md), and
-  nothing about `ImperativeShell` cares where a commit came from, so the
-  same shell is reusable once a human-initiated path needs one too.
+  log) — at the time this bullet was first written, this didn't exist
+  for instructions issued directly by a human at all; nothing wired
+  `patientEngine`'s output through one. **That gap is now closed** —
+  `src/human/actHuman.ts` is the human-initiated counterpart to the
+  agentic layer's `act()`, and it reuses `createInMemoryShell`/
+  `createFileShell` unmodified (just with its own
+  `HumanActionAuditRecord` audit shape instead of the agentic
+  `AuditRecord`), proving the claim this bullet already made — "nothing
+  about `ImperativeShell` cares where a commit came from" — against a
+  second real caller instead of just asserting it. See
+  `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: the human-initiated
+  ImperativeShell path" for what building it actually required, and
+  what it still doesn't decide (principally: whether the two paths'
+  audit trails should ever unify into one store, which remains a
+  separate, open question in docs/AGENTIC_LAYER.md).
 - No HTTP/API layer.
 - No clinical domain modeling beyond the two proof-of-concept instructions
   (`AdmitPatient`, `DischargePatient`) *in the patient domain itself* —

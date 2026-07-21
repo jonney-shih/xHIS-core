@@ -1490,10 +1490,97 @@ one-to-many.
   only the ones still `'scheduled'`. One booking failing to cancel
   doesn't block the rest, the same `patientToLab.ts`/`patientToImaging.ts`
   contract.
-- **What this doesn't prove:** no durable outbox relay exists yet for
-  scheduling — `patientToLab.ts`/`patientToImaging.ts` both eventually
-  got one (`outboxRelayLab.ts`/`outboxRelayImaging.ts`), built as a
-  deliberately separate, later step each time; the same is true here,
-  not yet done. Nor does this address the remaining gap from the
-  original synthesis question — a human-initiated `ImperativeShell`
-  path still doesn't exist.
+- **What this doesn't prove:** at the time this section was written, no
+  durable outbox relay existed yet for scheduling —
+  `patientToLab.ts`/`patientToImaging.ts` both eventually got one
+  (`outboxRelayLab.ts`/`outboxRelayImaging.ts`), built as a deliberately
+  separate, later step each time; the same remains true here, still not
+  done. Nor did this address the remaining gap from the original
+  synthesis question — a human-initiated `ImperativeShell` path still
+  didn't exist. **That's since been closed too — see below, which
+  closes the original synthesis question's three named gaps
+  completely.**
+
+## Resolved: the human-initiated ImperativeShell path
+
+The third, and last, of the original synthesis question's named gaps.
+docs/ARCHITECTURE.md and docs/AGENTIC_LAYER.md both flagged the same
+thing: nothing wired a directly human-issued instruction's `Do` output
+through an `ImperativeShell` — only `act()`, the agentic layer's own
+Act stage, ever committed anything. `src/human/actHuman.ts` is that
+missing counterpart.
+
+- **Deliberately does not reuse Plan, `toPlanProposal`, or any
+  `Verifier` — and the reason is the same reason every one of those
+  exists in the first place.** `toPlanProposal`'s untrusted-JSON gate,
+  `combineVerifiers`'s PDPA rationale scan, batch-size rule, and
+  risk-tier rule all exist to compensate for an AI proposal having no
+  inherent authority of its own. A human directly issuing an
+  instruction already *is* the authority, once their identity and role
+  are confirmed — there's no LLM-authored rationale to scan, no
+  legitimate-large-order-set-vs-suspicious-AI-batch distinction to
+  make, and no separate "Check, then wait for a human" step, because
+  the human is already the one calling this function. Building
+  `actHuman()` as a thinner, parallel path rather than routing human
+  instructions through the AI-shaped pipeline is itself the finding:
+  the two are genuinely different kinds of input, not the same shape
+  wearing different clothes.
+- **Reuses the identity/role-checking machinery instead of duplicating
+  it, because the underlying question is the same one.**
+  `resolveActorForInstructions` (`agentic/identity/`) is the
+  human-path counterpart to `resolveApprovalForProposal` — same
+  `RiskTierRegistry`/`ApprovalPolicy` lookup, same `resolveApproval`
+  underneath, because "who may approve X" and "who may directly issue
+  X" are the same real-world authority question in every domain
+  modeled so far (a physician who can approve a discharge is also the
+  one who orders it directly). It takes `instructions` directly rather
+  than a `PlanProposal`, since there is no proposal here to key off of.
+- **`ImperativeShell` gained a fourth, defaulted type parameter so
+  `actHuman()` could supply its own audit-record shape without
+  disturbing a single existing call site.** `TAuditRecord = AuditRecord<TInstruction, TEffect>`
+  on `ImperativeShell`, `createInMemoryShell`, and `createFileShell` —
+  confirmed empirically, not just by inspection: `npm run typecheck`
+  and the full suite passed unchanged immediately after this change,
+  before any new human-path code existed, proving every 3-type-argument
+  call site really does keep compiling as-is.
+- **`HumanActionAuditRecord` is a genuinely distinct type from
+  `AuditRecord`, not the same shape with placeholder fields.** No
+  `proposal.rationale`/`modelVersion`/`promptVersion`/`decision` —
+  none of that exists when a human issues an instruction directly, and
+  forcing values like `modelVersion: 'human'` into `AuditRecord`'s
+  shape would misrepresent what happened rather than describe it.
+  `HumanActionOutcome` also has no `'awaiting-approval'` (nobody is
+  waiting on a separate approver in this path) and no `'stale'` (unlike
+  `act()`, `actHuman()` only ever calls `reexecute` once, immediately
+  before commit, against the freshest state — there is no earlier,
+  possibly-stale computation for a later failure to contradict, so a
+  plain `'rejected'` already says everything there is to say).
+- **The same optimistic-concurrency close `tests/agentic/shell/actStaleCommitRace.test.ts`
+  proved necessary for `act()` applies here too, and is proven the same
+  way.** `actHuman()` re-derives what to commit from
+  `shell.readLatest() ?? baselineContext` immediately before writing,
+  exactly like `act()`. `tests/human/actHuman.test.ts`'s fourth case
+  proves it concretely: a commit made directly against the shell after
+  a caller's `baselineContext` was taken still gets correctly detected
+  and rejected, not silently overwritten — nothing about being
+  human-initiated makes this path immune to the same race the agentic
+  path needed fixing for.
+- **Proven through a second real caller of `createFileShell`, not just
+  the in-memory stand-in.** `tests/human/actHumanFileShellIntegration.test.ts`
+  runs `actHuman()` against the exact same `createFileShell` `act()`
+  already uses in `fileShellActIntegration.test.ts` — just with
+  `HumanActionAuditRecord` as its `TAuditRecord` — proving `shell.ts`'s
+  own long-standing claim ("nothing about `ImperativeShell` cares
+  where a commit came from") empirically, for the first time, rather
+  than leaving it asserted.
+- **What this doesn't prove:** whether the agentic and human-initiated
+  paths should ever share one *audit* store, not just the same shell
+  *mechanism* — considered and deliberately not built here (it would
+  mean changing `AuditRecord` and every existing agentic test), and
+  remains open in docs/AGENTIC_LAYER.md. Nor does this model any real
+  authentication, session, or HTTP boundary a human's instruction would
+  actually arrive through — `docs/ARCHITECTURE.md` already scopes "no
+  HTTP/API layer" out entirely, unchanged by this. This closes the
+  original synthesis question's three named gaps completely: all seven
+  domains have agentic-layer integration, `patientToScheduling.ts`
+  exists, and a human-initiated `ImperativeShell` path now exists too.
