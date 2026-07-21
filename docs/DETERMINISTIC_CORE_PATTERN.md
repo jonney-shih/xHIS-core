@@ -1041,10 +1041,69 @@ close that gap for a second domain: `labRiskTiers`, `labInstructionValidators`,
   `labVerifier` (Check) → `resolveApprovalForProposal` → `act()` to a
   real commit — mirroring `approvalFlow.test.ts`'s depth for patient,
   now demonstrated for lab specifically, not asserted by analogy.
-- **What this doesn't prove:** the other five domains (bed, ledger,
-  scheduling, imaging, nursing) still have no agentic-layer integration
-  at all — this closes the gap for one additional domain, not the
-  general claim "any domain can trivially get one." Nor does it decide
-  real risk tiers or approval policies for a real deployment — `labRiskTiers`
-  and `EXAMPLE_labApprovalPolicy` are exactly as illustrative as
-  patient's own versions, same restraint, same `EXAMPLE_` discipline.
+- **What this doesn't prove:** at the time this section was written,
+  the other five domains (bed, ledger, scheduling, imaging, nursing)
+  still had no agentic-layer integration at all — this closed the gap
+  for one additional domain, not the general claim "any domain can
+  trivially get one." **Bed has since been closed too — see the next
+  section.** Nor does it decide real risk tiers or approval policies
+  for a real deployment — `labRiskTiers` and `EXAMPLE_labApprovalPolicy`
+  are exactly as illustrative as patient's own versions, same restraint,
+  same `EXAMPLE_` discipline.
+
+## Resolved: bed's agentic-layer integration
+
+The second domain (after `lab`) to get real agentic-layer integration.
+`src/agentic/{risk,validation,verification,identity}/bed.ts` supply
+`bedRiskTiers`, `bedInstructionValidators`, `bedVerifier`, and
+`EXAMPLE_bedApprovalPolicy` — the same four pieces `patient.ts` and
+`lab.ts` have.
+
+- **Bed's two instructions share one tier, and that's a real finding,
+  not an oversight.** `AssignBed`/`ReleaseBed` both get
+  `'review-required'`, because *neither* independently earns anything
+  higher: both are reversible moves on a physical asset (a bed), not
+  clinical facts a downstream decision gets silently built on top of —
+  unlike `ReportLabResult` or `DischargePatient`, neither has a
+  terminal-consequence shape. Lab and patient each needed two tiers
+  because each had one instruction that genuinely differed in
+  consequence; bed doesn't have that instruction, so it doesn't get a
+  second tier. Tiering is being reasoned about per instruction, not
+  mechanically produced to fill out a fixed number of levels per
+  domain — this is what proves that: a domain is free to *not* need
+  differentiation.
+- **`EXAMPLE_bedApprovalPolicy` pushes the "domain-specific role
+  taxonomy" claim further than lab did.** Lab's policy still listed
+  `physician` alongside `lab-technologist` for its lower tier.  Bed's
+  `'review-required'` list is `['charge-nurse', 'bed-coordinator']` —
+  no `physician` at all. Bed assignment is a nursing/patient-flow
+  operation in a real hospital, not a physician's job, and the policy
+  says so directly: a `physician`-only identity is correctly refused.
+  `tests/agentic/bed/bedAgenticPipelineEndToEnd.test.ts`'s third case
+  proves it: `dr-wu` (`roles: ['physician']`) cannot approve `AssignBed`;
+  a `bed-coordinator` identity can. Because bed has only one tier, this
+  test demonstrates role-correctness *within* that tier rather than
+  differentiation *across* tiers the way lab's did — a different, still
+  meaningful, way the same mechanism can be shown to work.
+  `'approval-required'`'s role list (`['charge-nurse']`) is a
+  placeholder no current `BedInstruction` ever reaches — total for
+  `ApprovalPolicy`'s type, but not exercised by any real bed proposal
+  today.
+- **Third real caller of the domain-agnostic verifier factories.**
+  `bedVerifier` composes `createRationalePiiScanVerifier`,
+  `createMaxBatchSizeVerifier`, and `createRiskTierVerifier` exactly as
+  `patientVerifier` and `labVerifier` do — the factories now have three
+  independent callers, not two.
+- **Proven through the real chain, not just type-checked.**
+  `bedAgenticPipelineEndToEnd.test.ts` runs a raw, untrusted `AssignBed`
+  candidate through `toPlanProposal` → `bedEngine.executeSequence` (Do)
+  → `bedVerifier` (Check) → `resolveApprovalForProposal` → `act()` to a
+  real commit against a bed that was actually `'available'` beforehand,
+  plus a malformed-candidate rejection case and the role-correctness
+  case above.
+- **What this doesn't prove:** ledger, scheduling, imaging, and nursing
+  still have no agentic-layer integration — two of seven domains now
+  have it, five don't. Nor does it decide real risk tiers or approval
+  policies for a real deployment — `bedRiskTiers` and
+  `EXAMPLE_bedApprovalPolicy` are exactly as illustrative as patient's
+  and lab's own versions.
