@@ -626,10 +626,61 @@ the actual finding):
   events, relay them together, amortizing one read across many) or log
   rotation/archival (cap how much history any one relay run has to
   scan) well before the log reaches the sizes a real continuous
-  remote-monitoring stream would produce over weeks. Neither fix is
+  remote-monitoring stream would produce over weeks. Neither fix was
   built here — this benchmark's job was only to convert "might be fine
   as-is or might need a different strategy" into a concrete threshold to
-  design against, not to build the strategy itself.
+  design against, not to build the strategy itself. **The batching half
+  has since been built and verified — see "Resolved: batching for
+  remote care data volume" below.**
+
+## Resolved: batching for remote care data volume
+
+The benchmark above quantified the concern; this builds and verifies
+the fix it recommended. `src/core/io/batchedRelayDriver.ts`'s
+`createBatchedRelayDriver` coalesces several new source commits into
+one relay call instead of one call per commit — `relayEffects` itself
+is completely unchanged, since it already processes however many new
+entries exist since the cursor in a single call. The fix is entirely
+about *when* a caller invokes it, not about the relay mechanism.
+
+- **The driver has no notion of "how many commits are pending" that
+  requires reading anything back off disk — deliberately.** The count
+  is something the caller already knows the instant it happens (it just
+  committed one). Tracking it in-process, not durably, means a restart
+  just resumes accumulating from zero — the worst case is one batch
+  relays slightly earlier than it otherwise would, never later or not
+  at all, since `relayEffects`'s own cursor is what actually guarantees
+  no source commit is ever skipped regardless of how this driver
+  batches calls to it. The two mechanisms compose without either
+  needing to know about the other, the same way the outbox pattern and
+  saga/compensation already do.
+- **Verified with a real, apples-to-apples comparison, not just
+  reasoned about.** `tests/benchmarks/batchedRelayVolume.bench.test.ts`
+  runs the same 150 new commits against the same starting 20,000-entry
+  historical log twice — once relaying after every single commit, once
+  batching 15 at a time — and measures total time for each. Measured
+  result: naive totaled 5110.27ms across 150 calls; batched totaled
+  732.11ms across 10 calls — a 7.0x speedup. The test's actual assertion
+  is `batchedTotalMs < naiveTotalMs`, not a fixed number (machine-
+  dependent numbers would make this a source of CI flakiness for a
+  question that's about relative improvement, not an absolute target).
+- **Two independent thresholds, not one, because count alone isn't
+  enough.** `BatchingPolicy.maxWaitMs` bounds staleness during
+  low-volume periods — without it, a batch that never reaches
+  `maxPendingCount` would sit unrelayed forever. `flush()` exists for
+  the same reason at the other end (e.g. graceful shutdown): nothing
+  accumulated should ever be silently left stranded just because a
+  threshold was never crossed.
+- **What this doesn't prove:** log rotation/archival, the other half
+  of the original recommendation, isn't built — batching reduces how
+  often the whole log gets read, but doesn't bound how large that log
+  is allowed to grow indefinitely. At sufficiently large accumulated
+  history, even a batched relay's occasional full reads would eventually
+  become expensive again; batching raises the volume threshold where
+  that starts to matter, it doesn't remove the threshold. Nor does this
+  address *how* a real caller decides `BatchingPolicy`'s actual numbers
+  for a real deployment's actual event rate — `maxPendingCount: 15`
+  here is illustrative, not a recommendation.
 
 ## Resolved: message-ID idempotency for external protocol integration
 
