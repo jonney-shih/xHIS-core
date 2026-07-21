@@ -1447,5 +1447,53 @@ and `EXAMPLE_nursingApprovalPolicy`.
   versions always were. Nor does closing this gap address either of
   the other two gaps the original synthesis question named: a
   human-initiated `ImperativeShell` path still doesn't exist (see
-  docs/ARCHITECTURE.md and docs/AGENTIC_LAYER.md), and
-  `patientToScheduling.ts` is still missing.
+  docs/ARCHITECTURE.md and docs/AGENTIC_LAYER.md), and, at the time
+  this section was written, `patientToScheduling.ts` was still
+  missing. **That's since been closed too — see below.**
+
+## Resolved: patientToScheduling.ts
+
+The second of the original synthesis question's three named gaps to
+close (after all seven domains' agentic-layer integration).
+`CancelBooking` already existed in scheduling — this was the
+"shovel-ready" gap: nothing invoked it on discharge yet.
+`src/integration/patientToScheduling.ts` mirrors `patientToLab.ts`/
+`patientToImaging.ts` exactly in shape: no reaction to
+`EncounterAdmitted` (a booking is made by an explicit scheduling
+instruction, never implied by admission — the same reasoning
+recurring a third time, genuinely, not by rote), and `EncounterDischarged`
+cancels every still-`'scheduled'` booking found for that encounter,
+one-to-many.
+
+- **The one genuine difference from lab/imaging, surfaced by actually
+  reading `scheduling/types.ts` rather than assuming the analogy held.**
+  Lab's `LabOrderRecord.encounterId` and imaging's `StudyRecord.encounterId`
+  are both branded `EncounterId` foreign keys. Scheduling's
+  `BookingRecord.subjectId` is a plain `string`, deliberately kept
+  generic — a booking's subject might be a patient's procedure, but
+  might just as well be equipment maintenance or a staff shift, neither
+  of which has an encounter at all. `src/integration/schedulingLookup.ts`'s
+  `findPendingBookingsForEncounter` can only match on `subjectId`
+  equality, a convention-based link, not a type-enforced one — nothing
+  in scheduling's own types stops a caller from putting something other
+  than an `EncounterId` in `subjectId`. `patientToScheduling.test.ts`
+  exercises this directly: a booking whose `subjectId` is
+  `'quarterly-maintenance'` is correctly left alone on discharge,
+  proving the weaker link doesn't accidentally cancel bookings that were
+  never about an encounter at all.
+- **Redelivery-safe and best-effort, for the same reasons as every
+  prior choreography reaction.** `findPendingBookingsForEncounter` is
+  lookup-driven, not selection-driven (unlike `bedLookup.ts`'s
+  `findBedHoldingEncounter`, which needed a redelivery-safety check for
+  `EncounterAdmitted`'s bed-selection side), so re-delivering the same
+  discharge after some bookings are already cancelled naturally finds
+  only the ones still `'scheduled'`. One booking failing to cancel
+  doesn't block the rest, the same `patientToLab.ts`/`patientToImaging.ts`
+  contract.
+- **What this doesn't prove:** no durable outbox relay exists yet for
+  scheduling — `patientToLab.ts`/`patientToImaging.ts` both eventually
+  got one (`outboxRelayLab.ts`/`outboxRelayImaging.ts`), built as a
+  deliberately separate, later step each time; the same is true here,
+  not yet done. Nor does this address the remaining gap from the
+  original synthesis question — a human-initiated `ImperativeShell`
+  path still doesn't exist.
