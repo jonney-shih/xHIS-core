@@ -175,8 +175,8 @@ pattern above still holds for all of these. What follows are specific,
 real gaps that surface once that breadth is actually attempted, named now
 so they read as known boundaries later, not as oversights.
 
-**This section was written when only patient and bed existed.** Four
-more domains and a benchmark have since tested most of what's named
+**This section was written when only patient and bed existed.** Every
+domain and benchmark built since has tested most of what's named
 below — each bullet is left as originally written, not quietly
 rewritten, with a pointer added to whatever later section resolved it.
 
@@ -314,11 +314,25 @@ design above is deliberately detailed enough that building it later
 shouldn't require rediscovering this reasoning — just acting on it once
 a third domain actually needs to subscribe to something.
 
+**"Nursing" above was an arbitrary placeholder name, not a forecast.**
+The two mentions of nursing in this section (as an example third
+subscriber, and as the module that might someday write
+`patientToNursing.ts`) were written before nursing was an actual
+domain — any name would have done as the example. The nursing domain
+that was later built (see "Resolved: nursing's credential/role state,
+split from roster generation") never became a patient-choreography
+consumer at all: it has no relationship to `patientCommitsFile`, no
+`patientToNursing.ts`, and nothing to do with subscribing to anything.
+Read "nursing" above as it was meant at the time — an arbitrary example
+— not as something that came true under that name.
+
 ## Resolved: the third subscriber, and what it actually proved
 
 A third domain (`lab`, chosen over `nursing` — nursing conflates
 credential/role state and roster-generation, two unrelated concerns
-better tested separately, see `docs/AGENTIC_LAYER.md`) was built and
+better tested separately, see "Resolved: nursing's credential/role
+state, split from roster generation" below for what nursing actually
+turned out to be once it was built) was built and
 wired into the choreography specifically to stop reasoning about this
 hypothetically. `src/integration/patientToLab.ts` reacts to
 `EncounterDischarged` by cancelling every still-pending lab order for
@@ -478,7 +492,10 @@ to build a real scheduler.
   never asked the *domain* to be simple, only asked the *commit boundary*
   to enforce one hard, checkable constraint before anything reaches it.
   All three named families in the original thesis have now each produced
-  one real, tested domain.
+  at least one real, tested domain — state/time-precision plus
+  regulatory traceability already had three (`patient`/`bed`/`lab`) even
+  before this; conservation and optimization/feasibility each have
+  their first here.
 
 ## Resolved: CDSS as a Plan source
 
