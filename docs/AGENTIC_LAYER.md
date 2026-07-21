@@ -891,3 +891,59 @@ signs off on any of this) rather than merely unbuilt.
     single-writer assumption this document already scopes it to.
     Multi-process coordination for `createFileShell` remains explicitly
     out of scope, unchanged from before this fix.
+- **`createNursingIdentityProvider` takes a frozen `NursingContext`
+  snapshot, and nothing stops a caller from resolving an approval
+  against one that's gone stale relative to nursing's real, current
+  state — a different gap from the OCC one above, on the *read* side
+  instead of the *write* side, raised by the same human reviewer asking
+  whether the last two domains (imaging, nursing) needed anything
+  further, then confirmed empirically rather than argued.**
+  `tests/agentic/identity/nursingIdentityProviderStaleness.test.ts`
+  proves it: a physician's credential gets revoked in nursing's real,
+  current state; a fresh `IdentityProvider` built from that current
+  state correctly refuses them, but an `IdentityProvider` built earlier,
+  before the revocation, still resolves them as a valid approver when
+  consulted afterward. `isCredentialValidAsOf`
+  (`credentialValidity.ts`) can only check a credential record *within*
+  whatever snapshot it was handed — it has no way to know the snapshot
+  itself has gone stale. `asOf` answers "was this credential valid at
+  this moment, according to what this snapshot recorded," not "does
+  this snapshot still reflect reality as of this moment" — a
+  materially different, and here unanswered, question.
+  - **Imaging has no equivalent exposure, checked directly rather than
+    assumed.** Imaging's own handlers (`OrderStudy`/`RecordStudyStored`/
+    `ReportStudy`/`CancelStudy`) only ever check invariants against
+    whatever `ImagingContext` they're actually given — the same shape
+    the OCC fix above already covers completely. Nothing else in the
+    codebase reads *from* imaging's committed state to make its own
+    authorization or invariant decisions the way every other domain's
+    approval flow reads from nursing's. This gap is specific to nursing
+    precisely because nursing is the only domain whose committed state
+    doubles as authorization infrastructure for every other domain.
+  - **The OCC fix does not cover this, and could not.** `act()`/
+    `actHuman()`'s optimistic-concurrency check re-validates the
+    *domain being committed to*, immediately before writing.
+    Resolving an approval happens earlier, and entirely separately,
+    against whatever `IdentityProvider` the caller already has in
+    hand — nothing about re-checking "is this `ScheduleBooking` still
+    feasible against the real latest state" touches "is this
+    `IdentityProvider` itself still reflecting nursing's real latest
+    state." Both `resolveApprovalForProposal` (the agentic path) and
+    `resolveActorForInstructions` (the human-initiated path) are
+    equally exposed, since both just accept whatever `IdentityProvider`
+    they're handed.
+  - **The likely fix, if this gets picked up, mirrors the OCC fix's own
+    shape: stop trusting an already-computed value, force a fresh read
+    at the moment of use.** `createNursingIdentityProvider` could take
+    a "read current state now" callback (e.g.
+    `() => readLatestContext(nursingCommitsFile) ?? emptyNursingContext`)
+    instead of a frozen `NursingContext` value, calling it inside
+    `resolve()` itself rather than once at construction time — the same
+    "recompute against reality immediately before the moment that
+    matters, don't trust an earlier snapshot" move `act()`'s `reexecute`
+    already makes for commits, applied here to identity resolution
+    instead.
+  - **Status: proven, not yet fixed.** Deliberately not designed here —
+    the reviewer asked for the gap to be proven empirically first and
+    the fix considered as a separate step, the same request and the
+    same sequencing the OCC fix above followed.
