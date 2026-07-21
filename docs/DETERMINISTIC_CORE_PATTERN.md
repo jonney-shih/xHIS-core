@@ -1157,9 +1157,64 @@ and `EXAMPLE_ledgerApprovalPolicy`.
   `resolveApprovalForProposal` → `act()` to a real commit that actually
   updates both account balances, plus a malformed-candidate rejection
   case and the role-differentiation case above.
-- **What this doesn't prove:** scheduling and imaging and nursing still
-  have no agentic-layer integration — three of seven domains now have
-  it, four don't. Nor does it decide real risk tiers or approval
-  policies for a real deployment — `ledgerRiskTiers` and
-  `EXAMPLE_ledgerApprovalPolicy` are exactly as illustrative as every
-  other domain's own versions.
+- **What this doesn't prove:** at the time this section was written,
+  scheduling and imaging and nursing still had no agentic-layer
+  integration — three of seven domains had it, four didn't.
+  **Scheduling has since been closed too — see the next section.** Nor
+  does it decide real risk tiers or approval policies for a real
+  deployment — `ledgerRiskTiers` and `EXAMPLE_ledgerApprovalPolicy` are
+  exactly as illustrative as every other domain's own versions.
+
+## Resolved: scheduling's agentic-layer integration
+
+The fourth domain (after `lab`, `bed`, `ledger`) to get real
+agentic-layer integration. `src/agentic/{risk,validation,verification,identity}/scheduling.ts`
+supply `schedulingRiskTiers`, `schedulingInstructionValidators`,
+`schedulingVerifier`, and `EXAMPLE_schedulingApprovalPolicy`.
+
+- **Tier split confirmed by reading the handler, not assumed by
+  analogy.** `ScheduleBooking` gets `'review-required'` — correctable
+  via `CancelBooking`, the same shape `AdmitPatient`/`PostEntry` get
+  that tier for. `CancelBooking` gets `'approval-required'`, and the
+  reasoning was checked directly against `scheduleBookingHandler`'s
+  actual code before writing it down: `if (ctx.bookings[instruction.bookingId])`
+  rejects with `BookingAlreadyExists` for *any* existing key, cancelled
+  or not — there's no status check. So a cancelled `bookingId` can
+  never be scheduled again; recovering from a wrongful cancellation
+  needs a brand-new `bookingId`, the same "terminal within the domain"
+  shape `ReverseEntry` has. Scheduling adds a consequence ledger
+  doesn't: the freed time range becomes legally bookable by a third
+  party immediately, so a wrongful cancellation can lose the slot to
+  someone else before anyone notices, not just require re-entering data.
+- **`EXAMPLE_schedulingApprovalPolicy` uses disjoint tiers, not nested
+  ones — and that's a genuinely new shape.** Every prior domain's
+  higher tier was a *subset* of its lower tier's role list (lab's
+  `physician` alone out of `[physician, lab-technologist]`; ledger's
+  `finance-controller` alone out of `[billing-clerk, finance-controller]`).
+  Scheduling's `'review-required': ['scheduling-coordinator']` and
+  `'approval-required': ['or-director']` share nothing. Read against
+  `resolveApproval.ts`'s actual implementation before writing this
+  policy: it never compares roles across tiers, only looks up the one
+  tier's own list — so disjoint tiers work exactly as well as nested
+  ones, proving the mechanism doesn't quietly assume a seniority
+  hierarchy. `tests/agentic/scheduling/schedulingAgenticPipelineEndToEnd.test.ts`'s
+  third case proves it in practice: `coord-hsu` (`roles:
+  ['scheduling-coordinator']`) can approve `ScheduleBooking` but is
+  refused outright for `CancelBooking` — not "insufficiently senior,"
+  simply holding none of that tier's roles at all.
+- **Fifth real caller of the domain-agnostic verifier factories.**
+  `schedulingVerifier` composes the same three factories every other
+  domain's verifier does.
+- **Proven through the real chain, not just type-checked.**
+  `schedulingAgenticPipelineEndToEnd.test.ts` runs a raw, untrusted
+  `ScheduleBooking` candidate through `toPlanProposal` →
+  `schedulingEngine.executeSequence` (Do) → `schedulingVerifier`
+  (Check) → `resolveApprovalForProposal` → `act()` to a real commit,
+  plus a malformed-candidate rejection case and the disjoint-role case
+  above.
+- **What this doesn't prove:** imaging and nursing still have no
+  agentic-layer integration — four of seven domains now have it, two
+  don't. Nor does it decide real risk tiers or approval policies for a
+  real deployment — `schedulingRiskTiers` and
+  `EXAMPLE_schedulingApprovalPolicy` are exactly as illustrative as
+  every other domain's own versions.
