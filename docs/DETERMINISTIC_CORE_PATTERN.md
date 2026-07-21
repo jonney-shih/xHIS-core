@@ -672,15 +672,94 @@ about *when* a caller invokes it, not about the relay mechanism.
   accumulated should ever be silently left stranded just because a
   threshold was never crossed.
 - **What this doesn't prove:** log rotation/archival, the other half
-  of the original recommendation, isn't built — batching reduces how
-  often the whole log gets read, but doesn't bound how large that log
-  is allowed to grow indefinitely. At sufficiently large accumulated
+  of the original recommendation, wasn't built *here* — batching reduces
+  how often the whole log gets read, but doesn't bound how large that
+  log is allowed to grow indefinitely. At sufficiently large accumulated
   history, even a batched relay's occasional full reads would eventually
   become expensive again; batching raises the volume threshold where
   that starts to matter, it doesn't remove the threshold. Nor does this
   address *how* a real caller decides `BatchingPolicy`'s actual numbers
   for a real deployment's actual event rate — `maxPendingCount: 15`
-  here is illustrative, not a recommendation.
+  here is illustrative, not a recommendation. **Log rotation has since
+  been built and verified — see "Resolved: log rotation for remote care
+  data volume" below.**
+
+## Resolved: log rotation for remote care data volume
+
+Batching amortizes the full-log read across many events — a
+constant-factor win, but the log itself was still unbounded, so at
+large enough accumulated history even a batched relay's occasional
+reads would eventually become expensive again. `src/core/io/segmentedCommitLog.ts`
+builds the complementary fix: commits are written across a *sequence*
+of bounded segment files instead of one ever-growing one, with a
+durable manifest recording each closed segment's line count so a
+reader can compute exactly which segment contains what it's asking for
+*without opening any segment it doesn't need*.
+
+- **This required generalizing `relayEffects` first, not adding a
+  parallel relay function.** The loop only ever needed "give me what's
+  new from index N," never specifically "a file path" — `relayEffects`'s
+  first parameter changed from `sourceCommitsFile: string` to
+  `readNewCommits: (fromIndex: number) => readonly CommittedBatch<...>[]`,
+  and `outboxRelay.ts`/`outboxRelayLab.ts` each got a one-line change
+  (wrap their existing `readCommits(file).slice(fromIndex)` in a
+  closure) to preserve their exact prior behavior. The alternative —
+  a second, copy-pasted relay loop for segmented logs — would have
+  repeated exactly the duplication this codebase already chose not to
+  keep once `relayPatientEffectsToBed`/`relayPatientEffectsToLab`
+  proved the loop itself was domain-agnostic.
+- **The manifest is what makes "skip without opening" possible — a
+  segment's own line count has to be knowable without reading its
+  content.** One line per *closed segment*, not one line per entry — with
+  `maxLinesPerSegment` in the thousands, even a huge total history
+  produces a small, cheap manifest. `tests/core/io/segmentedCommitLog.test.ts`
+  proves the "without opening" half concretely, not just by construction:
+  it corrupts an old, fully-behind segment's file content with invalid
+  JSON and confirms reading past it still succeeds — if the reader ever
+  opened that file, `JSON.parse` would throw.
+- **Verified as the stronger claim it actually is, not just "faster."**
+  Batching is a constant-factor speedup; segmentation is supposed to
+  make read cost *independent of total history size* entirely, as long
+  as a caller is asking for something recent.
+  `tests/benchmarks/segmentedLogVolume.bench.test.ts` holds "how far
+  behind the cursor is" constant at 100 entries and grows total history
+  across three orders of magnitude. Measured result:
+
+  | Total history | Single-file read | Segmented read |
+  |---|---|---|
+  | 10,000 | 9.90ms | 9.91ms |
+  | 100,000 | 83.52ms | 16.05ms |
+  | 1,000,000 | 1,123.19ms | 9.74ms |
+
+  Single-file cost grows with total history, matching
+  `outboxRelayVolume.bench.test.ts`'s earlier finding exactly. Segmented
+  cost does not — it stays flat regardless of whether there are 10,000
+  or 1,000,000 entries behind the tail being read, because the segments
+  containing them are never opened at all.
+- **Loud failure over silent data loss, the same discipline as
+  everywhere else in this codebase.** If a segment a reader actually
+  needs is missing on disk, `readSegmentedCommitsFrom` throws a
+  descriptive error rather than silently returning less than actually
+  exists — the same posture as `validateInstruction`, `resolveApproval`,
+  and `findBedHoldingEncounter`'s ambiguous case. This is what makes
+  `src/core/io/segmentArchival.ts`'s own safety check load-bearing
+  rather than decorative: `archiveFullyProcessedSegments` only moves a
+  closed segment once *every* supplied cursor has advanced past it
+  (fails closed — archives nothing — if given zero cursors), and
+  `tests/core/io/segmentArchival.test.ts` proves the failure mode this
+  guards against directly: a consumer left out of the cursor list hits
+  exactly the "missing segment" error above the next time it tries to
+  read.
+- **What this doesn't prove:** archival only protects consumers it's
+  told about — a real deployment has to actually enumerate every live
+  consumer when deciding what's safe to move, which this reference
+  implementation has no way to discover on its own (the same "this
+  reference implementation doesn't invent what it can't know" reasoning
+  `docs/AGENTIC_LAYER.md` already applies to `fileShell.ts`'s missing
+  retention/backup/encryption story). Nor does this decide real values
+  for `maxLinesPerSegment` or where an archive directory should actually
+  live (cold storage, a different retention tier, ...) for any real
+  deployment's real volume and compliance requirements.
 
 ## Resolved: message-ID idempotency for external protocol integration
 

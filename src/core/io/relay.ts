@@ -1,4 +1,4 @@
-import { readCommits } from './commitLog.js';
+import type { CommittedBatch } from './commitLog.js';
 import type { OutboxCursor } from './outboxCursor.js';
 
 export interface RelayResult<TTargetCtx, TOutcome> {
@@ -30,22 +30,33 @@ export interface EffectCommitter<TTargetCtx, TTargetEffect> {
  * only ever looked like part of the relay because bed's `react` closure
  * happened to need it — it's now just a value the caller closes over.
  *
- * Reads the source domain's durable commit log
- * (`agentic/shell/fileShell.ts`'s `createFileShell`) and a durable
- * `cursor` remembering how far it's gotten, and for every unprocessed
- * entry: runs `react`, durably commits whatever effects it produced via
- * `targetCommitter` *before* advancing the cursor past that entry. A
- * crash between those two writes means the entry looks unprocessed on
- * the next run and gets redelivered — never silently skipped, which is
- * why every `react` passed in here must itself be safe to call twice for
- * the same entry.
+ * `readNewCommits(fromIndex)` — not a file path — supplies whatever
+ * commits exist from `fromIndex` onward, as absolute-indexed entries
+ * (the first returned entry corresponds to global index `fromIndex`,
+ * not 0). Originally this took `sourceCommitsFile: string` directly and
+ * called `readCommits` itself; generalized once `core/io/segmentedCommitLog.ts`
+ * needed a second, genuinely different way to answer "give me what's
+ * new" — one that never has to read a source's *entire* history to do
+ * it (see docs/DETERMINISTIC_CORE_PATTERN.md's "Resolved: log rotation
+ * for remote care data volume"). `outboxRelay.ts`/`outboxRelayLab.ts`
+ * wrap `readCommits(file).slice(fromIndex)` in a one-line closure to
+ * preserve their exact prior behavior; nothing about the loop below
+ * changed.
+ *
+ * Tracks a durable `cursor` remembering how far it's gotten, and for
+ * every unprocessed entry: runs `react`, durably commits whatever
+ * effects it produced via `targetCommitter` *before* advancing the
+ * cursor past that entry. A crash between those two writes means the
+ * entry looks unprocessed on the next run and gets redelivered — never
+ * silently skipped, which is why every `react` passed in here must
+ * itself be safe to call twice for the same entry.
  *
  * The cursor advances once an entry has been *attempted*, regardless of
  * whether every reaction inside it succeeded — a delivery guarantee, not
  * a success guarantee, so one stuck entry can't block every later one.
  */
 export function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TTargetEffect>(
-  sourceCommitsFile: string,
+  readNewCommits: (fromIndex: number) => readonly CommittedBatch<TSourceCtx, TSourceEffect>[],
   cursor: OutboxCursor,
   targetCommitter: EffectCommitter<TTargetCtx, TTargetEffect>,
   targetContext: TTargetCtx,
@@ -54,15 +65,15 @@ export function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TT
     sourceEffects: readonly TSourceEffect[],
   ) => ReactionResult<TTargetCtx, TOutcome, TTargetEffect>,
 ): RelayResult<TTargetCtx, TOutcome> {
-  const commits = readCommits<TSourceCtx, TSourceEffect>(sourceCommitsFile);
   const startIndex = cursor.read();
+  const newCommits = readNewCommits(startIndex);
 
   let context = targetContext;
   const outcomes: TOutcome[] = [];
   let processedThroughIndex = startIndex;
 
-  for (let index = startIndex; index < commits.length; index += 1) {
-    const commit = commits[index]!;
+  for (let offset = 0; offset < newCommits.length; offset += 1) {
+    const commit = newCommits[offset]!;
     const result = react(context, commit.effects);
 
     context = result.context;
@@ -72,7 +83,7 @@ export function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TT
       targetCommitter.commit(result.context, result.effects);
     }
 
-    processedThroughIndex = index + 1;
+    processedThroughIndex = startIndex + offset + 1;
     cursor.advance(processedThroughIndex);
   }
 

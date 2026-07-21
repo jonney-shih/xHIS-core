@@ -1,3 +1,4 @@
+import { readCommits } from '../core/io/commitLog.js';
 import type { OutboxCursor } from '../core/io/outboxCursor.js';
 import { relayEffects } from '../core/io/relay.js';
 import type { IsoTimestamp } from '../instructions/bed/ids.js';
@@ -90,7 +91,7 @@ export function relayPatientEffectsToBed(
   react: PatientBedReactor = reactToPatientEffects,
 ): RelayPatientEffectsToBedResult {
   return relayEffects<PatientContext, PatientEffect, BedContext, PatientBedReactionOutcome, BedEffect>(
-    patientCommitsFile,
+    (fromIndex) => readCommits<PatientContext, PatientEffect>(patientCommitsFile).slice(fromIndex),
     cursor,
     bedCommitter,
     bedContext,
