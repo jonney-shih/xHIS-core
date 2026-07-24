@@ -185,7 +185,7 @@ describe('nursing agentic pipeline, end to end', () => {
 
     // The approver's identity is derived from `baseline` itself, not a
     // fixed test-only list.
-    const identityProvider = createNursingIdentityProvider(baseline);
+    const identityProvider = createNursingIdentityProvider(() => baseline);
 
     const cmoResolution = resolveApprovalForProposal(identityProvider, nursingRiskTiers, EXAMPLE_nursingApprovalPolicy, proposal, {
       approverId: 'officer-lin',

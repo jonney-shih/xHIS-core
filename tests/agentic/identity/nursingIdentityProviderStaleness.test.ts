@@ -11,27 +11,18 @@ import { encounterId, isoTimestamp } from '../../../src/instructions/patient/ids
 import type { PatientInstruction } from '../../../src/instructions/patient/types.js';
 
 /**
- * Documents a real, currently-unguarded gap raised directly by a human
- * reviewer, distinct from — and not fixed by — the optimistic-concurrency
- * check `act()`/`actHuman()` already do before committing.
- * `createNursingIdentityProvider` takes a frozen `NursingContext`
- * snapshot, not a live handle; its own doc comment recommends that a
- * caller "re-derives a fresh provider from whatever `NursingContext` is
- * current," but nothing enforces or verifies that. `isCredentialValidAsOf`
- * (`credentialValidity.ts`) can only check a credential record *within*
- * whatever snapshot it was given — it has no way to know the snapshot
- * itself has gone stale relative to the real world. `asOf` answers "was
- * this credential valid at this moment, according to what this snapshot
- * recorded," not "does this snapshot still reflect reality as of this
- * moment" — a materially different, and here unanswered, question.
- *
- * This test asserts the *current*, gapped behavior (it passes today,
- * without any fix) specifically to make the gap concrete before deciding
- * how to close it — the same "prove it empirically first" discipline
- * `actStaleCommitRace.test.ts` already applied to the write-side
- * concurrency gap.
+ * Originally documented a real, then-unguarded gap raised directly by a
+ * human reviewer: `createNursingIdentityProvider` used to take a frozen
+ * `NursingContext` snapshot, so nothing stopped a caller from resolving
+ * an approval against one that had gone stale relative to nursing's
+ * real, current state. Now that it takes a `readNursingContext`
+ * callback, invoked fresh inside `resolve()` every time (see
+ * `nursingIdentityProvider.ts`), this file proves the fix closes the
+ * gap rather than merely describing it — the *same* provider instance,
+ * never reconstructed, correctly reflects a revocation that happens
+ * after it was created.
  */
-describe('createNursingIdentityProvider snapshot staleness', () => {
+describe('createNursingIdentityProvider reads nursing state fresh, not from a frozen snapshot', () => {
   const drLinCredentialId = credentialId('cred-dr-lin');
 
   const nursingContextBeforeRevocation: NursingContext = {
@@ -64,49 +55,47 @@ describe('createNursingIdentityProvider snapshot staleness', () => {
     proposedAt: '2026-07-22T00:00:00.000Z',
   };
 
-  it('a stale IdentityProvider snapshot still honors a physician whose credential has since been revoked in the real, current nursing state', () => {
-    // Built from the pre-revocation snapshot — exactly what a caller
-    // would be holding if they fetched nursing state once and reused it,
-    // instead of re-reading it fresh before every approval.
-    const staleIdentityProvider = createNursingIdentityProvider(nursingContextBeforeRevocation);
+  it('the same provider instance stops honoring a physician the moment their credential is revoked in the real nursing state it reads from', () => {
+    // A mutable binding standing in for "wherever nursing's real,
+    // current state actually lives" (e.g. a file `readLatestContext`
+    // would read from) — the provider is handed a callback that reads
+    // *this*, not a value frozen at construction time.
+    let currentNursingContext = nursingContextBeforeRevocation;
+    const identityProvider = createNursingIdentityProvider(() => currentNursingContext);
+
+    const beforeRevocation = resolveApprovalForProposal(identityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, dischargeProposal, {
+      approverId: 'dr-lin',
+      approved: true,
+      decidedAt: '2026-07-22T00:00:00.000Z',
+    });
+    expect(beforeRevocation.kind).toBe('resolved');
+    if (beforeRevocation.kind !== 'resolved') throw new Error('expected resolved');
+    expect(beforeRevocation.approval.approverRole).toBe('physician');
 
     // Real world: dr-lin's credential gets revoked — for cause, say —
-    // sometime after that snapshot was taken.
-    const revocationResult = revokeCredentialHandler(nursingContextBeforeRevocation, {
+    // and nursing's real, current state moves on. Nothing re-creates
+    // `identityProvider`; the same instance is consulted again below.
+    const revocationResult = revokeCredentialHandler(currentNursingContext, {
       kind: 'RevokeCredential',
       credentialId: drLinCredentialId,
       revokedAt: nursingIsoTimestamp('2026-07-21T00:00:00.000Z'),
     });
     expect(revocationResult.ok).toBe(true);
     if (!revocationResult.ok) throw new Error('expected ok');
-    const currentNursingContext = revocationResult.value.context;
+    currentNursingContext = revocationResult.value.context;
 
-    // A *fresh* provider, built from nursing's actual current state,
-    // correctly refuses dr-lin — proving the resolution logic itself is
-    // sound; the problem is purely which snapshot a caller happens to be
-    // holding.
-    const freshIdentityProvider = createNursingIdentityProvider(currentNursingContext);
-    const freshResolution = resolveApprovalForProposal(freshIdentityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, dischargeProposal, {
+    // The fix: consulting the *same* provider instance again now
+    // correctly refuses dr-lin, because `resolve()` re-read
+    // `currentNursingContext` fresh rather than relying on whatever it
+    // saw the first time.
+    const afterRevocation = resolveApprovalForProposal(identityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, dischargeProposal, {
       approverId: 'dr-lin',
       approved: true,
-      decidedAt: '2026-07-22T00:00:00.000Z',
+      decidedAt: '2026-07-22T00:00:01.000Z',
     });
-    expect(freshResolution.kind).toBe('unresolved');
-
-    // The gap: the *stale* provider — built before the revocation, but
-    // consulted after it happened in real time — still resolves dr-lin
-    // as a valid physician, and act()/actHuman()'s optimistic-concurrency
-    // check does nothing to catch this: OCC re-validates the *domain
-    // being committed to* immediately before writing, not the freshness
-    // of an IdentityProvider a caller already resolved an approval
-    // against beforehand.
-    const staleResolution = resolveApprovalForProposal(staleIdentityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, dischargeProposal, {
-      approverId: 'dr-lin',
-      approved: true,
-      decidedAt: '2026-07-22T00:00:00.000Z',
+    expect(afterRevocation).toEqual({
+      kind: 'unresolved',
+      reason: "identity 'dr-lin' holds none of the required roles [physician]",
     });
-    expect(staleResolution.kind).toBe('resolved');
-    if (staleResolution.kind !== 'resolved') throw new Error('expected resolved');
-    expect(staleResolution.approval.approverRole).toBe('physician');
   });
 });

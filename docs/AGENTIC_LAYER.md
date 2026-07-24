@@ -891,13 +891,14 @@ signs off on any of this) rather than merely unbuilt.
     single-writer assumption this document already scopes it to.
     Multi-process coordination for `createFileShell` remains explicitly
     out of scope, unchanged from before this fix.
-- **`createNursingIdentityProvider` takes a frozen `NursingContext`
-  snapshot, and nothing stops a caller from resolving an approval
-  against one that's gone stale relative to nursing's real, current
+- **`createNursingIdentityProvider` used to take a frozen `NursingContext`
+  snapshot, and nothing stopped a caller from resolving an approval
+  against one that had gone stale relative to nursing's real, current
   state — a different gap from the OCC one above, on the *read* side
   instead of the *write* side, raised by the same human reviewer asking
   whether the last two domains (imaging, nursing) needed anything
-  further, then confirmed empirically rather than argued.**
+  further, then confirmed empirically rather than argued. This is now
+  fixed — see the "Status" bullet below.**
   `tests/agentic/identity/nursingIdentityProviderStaleness.test.ts`
   proves it: a physician's credential gets revoked in nursing's real,
   current state; a fresh `IdentityProvider` built from that current
@@ -932,18 +933,22 @@ signs off on any of this) rather than merely unbuilt.
     `resolveActorForInstructions` (the human-initiated path) are
     equally exposed, since both just accept whatever `IdentityProvider`
     they're handed.
-  - **The likely fix, if this gets picked up, mirrors the OCC fix's own
-    shape: stop trusting an already-computed value, force a fresh read
-    at the moment of use.** `createNursingIdentityProvider` could take
-    a "read current state now" callback (e.g.
-    `() => readLatestContext(nursingCommitsFile) ?? emptyNursingContext`)
-    instead of a frozen `NursingContext` value, calling it inside
-    `resolve()` itself rather than once at construction time — the same
-    "recompute against reality immediately before the moment that
-    matters, don't trust an earlier snapshot" move `act()`'s `reexecute`
-    already makes for commits, applied here to identity resolution
-    instead.
-  - **Status: proven, not yet fixed.** Deliberately not designed here —
-    the reviewer asked for the gap to be proven empirically first and
-    the fix considered as a separate step, the same request and the
-    same sequencing the OCC fix above followed.
+  - **Status: fixed, mirroring the OCC fix's own shape — stop trusting
+    an already-computed value, force a fresh read at the moment of
+    use.** `createNursingIdentityProvider` now takes a
+    `readNursingContext: () => NursingContext` callback instead of a
+    frozen `NursingContext` value, calling it inside `resolve()` itself
+    on every call rather than once at construction time. A real caller
+    wires this as something like
+    `() => readLatestContext(nursingCommitsFile) ?? emptyNursingContext` —
+    the same "recompute against reality immediately before the moment
+    that matters, don't trust an earlier snapshot" move `act()`'s
+    `reexecute` already makes for commits, applied here to identity
+    resolution instead. `nursingIdentityProviderStaleness.test.ts` now
+    proves the fix rather than the bug: the *same* provider instance,
+    never reconstructed, correctly stops honoring a physician the
+    moment their credential is revoked in the mutable binding it reads
+    from. See `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: nursing
+    identity resolution reads fresh, not from a frozen snapshot" for
+    what closing this required, including every existing call site this
+    signature change touched.

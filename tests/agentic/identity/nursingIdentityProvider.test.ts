@@ -43,7 +43,7 @@ const context: NursingContext = {
 
 describe('createNursingIdentityProvider', () => {
   it('resolves an identity with only the roles currently backed by a valid credential', () => {
-    const provider = createNursingIdentityProvider(context);
+    const provider = createNursingIdentityProvider(() => context);
 
     const identity = provider.resolve('nurse-1', '2026-07-01T00:00:00.000Z');
 
@@ -53,7 +53,7 @@ describe('createNursingIdentityProvider', () => {
   });
 
   it('is genuinely time-varying: the same identity resolves differently before and after a credential expires', () => {
-    const provider = createNursingIdentityProvider(context);
+    const provider = createNursingIdentityProvider(() => context);
 
     const beforeExpiry = provider.resolve('nurse-1', '2026-12-31T00:00:00.000Z');
     expect(beforeExpiry?.roles).toContain('charge-nurse');
@@ -63,7 +63,7 @@ describe('createNursingIdentityProvider', () => {
   });
 
   it('includes a role granted before its backing credential was later revoked, when asked about a moment before the revocation', () => {
-    const provider = createNursingIdentityProvider(context);
+    const provider = createNursingIdentityProvider(() => context);
 
     // asOf is before cred-revoked's own revokedAt (2026-06-01) — the
     // grant was valid at that moment, a retrospective audit query
@@ -74,7 +74,7 @@ describe('createNursingIdentityProvider', () => {
   });
 
   it('excludes a role once its backing credential has been revoked, for any asOf after the revocation', () => {
-    const provider = createNursingIdentityProvider(context);
+    const provider = createNursingIdentityProvider(() => context);
 
     const identity = provider.resolve('nurse-1', '2026-07-01T00:00:00.000Z');
 
@@ -82,7 +82,7 @@ describe('createNursingIdentityProvider', () => {
   });
 
   it('returns undefined for a staff member who has never appeared in any role grant', () => {
-    const provider = createNursingIdentityProvider(context);
+    const provider = createNursingIdentityProvider(() => context);
 
     expect(provider.resolve('nurse-99', '2026-07-01T00:00:00.000Z')).toBeUndefined();
   });
@@ -110,7 +110,7 @@ describe('createNursingIdentityProvider', () => {
       },
     };
 
-    const provider = createNursingIdentityProvider(allExpiredContext);
+    const provider = createNursingIdentityProvider(() => allExpiredContext);
 
     // Long after cred-1 expired — the identity is known (it has a
     // grant on record), it just holds nothing currently valid, a

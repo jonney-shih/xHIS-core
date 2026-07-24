@@ -16,16 +16,26 @@ import type { Identity, IdentityProvider } from './identity.js';
  * notion of a display name at all, so `displayName` here is just the
  * raw ID — honest about the gap, not a real substitute for one.
  *
- * Takes a `NursingContext` snapshot, not a live handle into anything —
- * a caller re-derives a fresh provider from whatever `NursingContext`
- * is current (e.g. `readLatestContext` against nursing's own commit
- * log) rather than this module reaching for state on its own, the same
- * "no ambient state" discipline `core/execution` handlers already
- * follow.
+ * Takes a `readNursingContext` callback, called fresh inside `resolve()`
+ * every time — never cached. This used to take a frozen `NursingContext`
+ * snapshot instead, and nothing stopped a caller from resolving against
+ * one that had gone stale relative to nursing's real, current state
+ * (e.g. a credential revoked *after* the snapshot was taken would still
+ * read as active) — see
+ * `tests/agentic/identity/nursingIdentityProviderStaleness.test.ts` for
+ * the empirical proof this used to be a real gap, and
+ * `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: nursing identity
+ * resolution reads fresh, not from a frozen snapshot" for what fixing
+ * it required. A real caller wires this as something like
+ * `() => readLatestContext(nursingCommitsFile) ?? emptyNursingContext` —
+ * the same "recompute against reality at the moment that matters, don't
+ * trust an earlier snapshot" move `act()`'s `reexecute` already makes
+ * for commits, applied here to identity resolution instead.
  */
-export function createNursingIdentityProvider(nursingContext: NursingContext): IdentityProvider {
+export function createNursingIdentityProvider(readNursingContext: () => NursingContext): IdentityProvider {
   return {
     resolve(identityId, asOf) {
+      const nursingContext = readNursingContext();
       const staffGrants = Object.values(nursingContext.roleGrants).filter((grant) => grant.staffId === identityId);
 
       // Distinct from "known, but currently holds no valid role" below

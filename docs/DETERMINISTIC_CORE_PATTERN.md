@@ -1584,3 +1584,66 @@ missing counterpart.
   original synthesis question's three named gaps completely: all seven
   domains have agentic-layer integration, `patientToScheduling.ts`
   exists, and a human-initiated `ImperativeShell` path now exists too.
+
+## Resolved: nursing identity resolution reads fresh, not from a frozen snapshot
+
+Asked whether the last two domains (imaging, nursing) needed anything
+further reinforced in the core foundation layer, on top of the OCC fix
+above. Imaging checked out clean by direct inspection of its own four
+handlers. Nursing had a real, different gap: `createNursingIdentityProvider`
+took a frozen `NursingContext` snapshot, and nothing stopped a caller
+from resolving an approval against one that had gone stale relative to
+nursing's real, current state — the OCC fix above cannot catch this,
+because it re-validates the domain *being committed to*, not the
+freshness of an `IdentityProvider` a caller already has in hand before
+`act()`/`actHuman()` is even called.
+
+- **The proof came first, as its own commit, the same discipline every
+  finding in this document follows.**
+  `tests/agentic/identity/nursingIdentityProviderStaleness.test.ts`
+  originally asserted the gapped behavior: a physician's credential
+  revoked in nursing's real, current state was still honored by an
+  `IdentityProvider` built from an earlier snapshot. Only after that
+  test passed (proving the gap, not hypothesizing it) was the fix
+  designed.
+- **The fix mirrors the OCC fix's own shape exactly: stop trusting an
+  already-computed value, force a fresh read at the moment of use.**
+  `createNursingIdentityProvider` now takes a
+  `readNursingContext: () => NursingContext` callback instead of a
+  frozen value, calling it inside `resolve()` on every call rather than
+  once at construction time. A real deployment wires this as something
+  like `() => readLatestContext(nursingCommitsFile) ?? emptyNursingContext` —
+  the same "recompute against reality immediately before the moment
+  that matters" move `act()`'s `reexecute` already makes for commits.
+- **Every existing call site needed the same mechanical change, and
+  none needed more than that.** `nursingIdentityProvider.test.ts`,
+  `nursingIdentityProviderApprovalFlow.test.ts`, and
+  `nursingAgenticPipelineEndToEnd.test.ts` all previously passed a
+  frozen `NursingContext` value directly; each now wraps it in a thunk
+  (`() => context`) that still returns the same object every time,
+  since none of those tests needed the context to actually change
+  mid-test — confirming the fix is additive to the *contract*, not
+  disruptive to what every existing caller was already doing.
+- **Re-run against the very test that proved the gap, this time proving
+  the fix — without reconstructing the provider.** The rewritten
+  `nursingIdentityProviderStaleness.test.ts` builds one
+  `IdentityProvider` backed by a mutable binding, resolves an approval
+  successfully, revokes the credential by reassigning that binding to
+  the post-revocation context, and resolves again against the *same*
+  provider instance — which now correctly refuses it. Proving the fix
+  works without ever calling `createNursingIdentityProvider` a second
+  time is what actually demonstrates `resolve()` reads fresh each call,
+  rather than merely showing that reconstructing the provider would
+  have picked up new state (which a frozen snapshot could already do
+  trivially, and would have proven nothing).
+- **What this doesn't prove:** that a real deployment actually wires
+  `readNursingContext` to something that reads real, persisted state on
+  every call — this fix makes that possible and removes the trap of a
+  frozen snapshot, but a caller could still hand it a closure that
+  captures a value once and returns it forever, which would reintroduce
+  the identical gap at the call site instead of inside this function.
+  Nor does this address whether other identity providers (a future SSO/
+  LDAP-backed one) need the same discipline — real directories are
+  inherently live queries with no separate snapshot step, so this
+  specific trap is particular to a provider backed by this codebase's
+  own committed state, which today is only `createNursingIdentityProvider`.

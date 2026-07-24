@@ -57,7 +57,7 @@ describe('nursing-backed identity provider, wired into a real approval decision'
   };
 
   it('resolves and honors an approval while the approver\'s credential is still valid', () => {
-    const identityProvider = createNursingIdentityProvider(nursingContext);
+    const identityProvider = createNursingIdentityProvider(() => nursingContext);
 
     const resolution = resolveApprovalForProposal(identityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, proposal, {
       approverId: 'dr-lin',
@@ -72,7 +72,7 @@ describe('nursing-backed identity provider, wired into a real approval decision'
   });
 
   it('refuses to resolve the same approver once their backing credential has expired — the identity check is genuinely time-varying', () => {
-    const identityProvider = createNursingIdentityProvider(nursingContext);
+    const identityProvider = createNursingIdentityProvider(() => nursingContext);
 
     const resolution = resolveApprovalForProposal(identityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, proposal, {
       approverId: 'dr-lin',
@@ -87,7 +87,7 @@ describe('nursing-backed identity provider, wired into a real approval decision'
   });
 
   it('reports no identity found for a staff member who never appears in nursing state at all — distinct from holding no valid role', () => {
-    const identityProvider = createNursingIdentityProvider(nursingContext);
+    const identityProvider = createNursingIdentityProvider(() => nursingContext);
 
     const resolution = resolveApprovalForProposal(identityProvider, patientRiskTiers, EXAMPLE_patientApprovalPolicy, proposal, {
       approverId: 'someone-never-credentialed',
