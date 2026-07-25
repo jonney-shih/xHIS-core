@@ -952,3 +952,60 @@ signs off on any of this) rather than merely unbuilt.
     identity resolution reads fresh, not from a frozen snapshot" for
     what closing this required, including every existing call site this
     signature change touched.
+- **The outbox relay's commit path was never brought under the OCC fix
+  above, and has the identical shape — raised by a proactive,
+  codebase-wide sweep for the same "frozen value trusted at the wrong
+  moment" pattern, requested after the OCC and nursing-staleness gaps
+  had each been found by asking a narrower question twice. This is the
+  first finding from actually widening the search.**
+  `tests/integration/outboxRelayStaleCommitRace.test.ts` proves it:
+  `relayPatientEffectsToBed` (and, by the same construction, every
+  other `outboxRelay*.ts` wrapper around `core/io/relay.ts`'s
+  `relayEffects`) commits via a plain `BedCommitter`/`EffectCommitter` —
+  `commit()` only, no `readLatest()` — so it never re-validates against
+  the target domain's actual latest committed state before writing.
+  Bed has two independent writers into the same `bedCommitsFile`:
+  direct `AssignBed`/`ReleaseBed` through the agentic/human pipeline
+  (OCC-protected, since `act()`/`actHuman()` call `readLatest()` before
+  committing) and this relay reacting to patient effects (not protected
+  at all, since it was built — and used ever since — entirely before
+  the OCC fix existed). A direct assignment landing between when a
+  relay caller took its starting `bedContext` snapshot and when the
+  relay actually commits gets silently erased: the relay's internally-
+  threaded, stale context still thinks the bed is available, reassigns
+  it, and commits a whole-context replacement with no memory of the
+  direct assignment at all.
+  - **`docs/DETERMINISTIC_CORE_PATTERN.md`'s own "Resolved: optimistic
+    concurrency check before commit" section overstated its coverage
+    ever so slightly, and this correction matters.** It says the fix
+    "protects [ledger and bed] the same way... the seam lives entirely
+    in `act()`/`shell.ts`, below every domain" — true for any caller
+    that goes through `act()`/`actHuman()`, but the relay's
+    `targetCommitter.commit()` call is a second, parallel commit path
+    into the same store that was never brought under that seam at all.
+    Worth annotating there once this is resolved, not silently
+    correcting.
+  - **A related, same-root-cause suspicion, not yet proven with its own
+    test.** `src/integration/externalLabResultAdapter.ts`'s
+    `ingestExternalLabResult` commits via the same bare
+    `LabCommitter`/`EffectCommitter` shape, and lab has at least three
+    independent writers (the agentic pipeline, `outboxRelayLab.ts`, and
+    this adapter) into the same `labCommitsFile`. Flagged, not yet
+    empirically confirmed the way the bed case above is — the same
+    "prove it first" step this document's other findings all went
+    through hasn't been done for this one yet.
+  - **The likely fix mirrors the OCC fix's own shape again: stop
+    trusting the internally-threaded context, force a fresh read
+    immediately before each commit.** `relayEffects` would need
+    `targetCommitter` to expose something like `readLatest()`
+    (`EffectCommitter` currently only requires `commit()`), and before
+    each commit inside its loop, re-run `react` against
+    `targetCommitter.readLatest() ?? context` rather than the
+    context threaded forward from the previous iteration — fixing this
+    once, at the `relayEffects` level, would automatically cover all
+    four `outboxRelay*.ts` wrappers, the same "fix the domain-agnostic
+    core once" precedent `act()`'s own fix already set.
+  - **Status: proven for bed, suspected but unproven for lab, not yet
+    fixed anywhere.** Deliberately not designed or built here — proving
+    the gap first and deciding the fix as a separate step, the same
+    sequencing every prior finding in this document followed.
