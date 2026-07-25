@@ -1890,3 +1890,18 @@ scratch case staged was actually rejected
 (`husky - pre-commit script failed (code 1)`, commit never created,
 confirmed against `git log`) before either was trusted and the scratch
 file removed again.
+
+**Follow-up: the same check now also runs in CI, not just locally.** A
+`pre-commit` hook only protects commits made from a checkout where it's
+actually installed — `git commit --no-verify`, a commit made from a
+tool that skips hooks, or (until now) anything pushed straight to a
+remote all bypass it entirely. `.github/workflows/ci.yml` runs
+`sh .husky/pre-commit` directly on every push and pull request, rather
+than re-declaring `lint && typecheck && test` a second time — one
+script is the single source of truth for "what has to pass," so the
+local hook and CI can never drift out of sync with each other by
+someone updating one and forgetting the other. Verified locally before
+trusting the workflow file, not just written and assumed correct:
+`npm ci` (a clean install from `package-lock.json`, the same command
+CI runs, not `npm install`) followed by `sh .husky/pre-commit` — the
+exact two steps the workflow performs — passed end to end.

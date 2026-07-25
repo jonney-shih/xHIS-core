@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+      - run: npm ci
+      # Runs the exact same script as the local pre-commit hook
+      # (.husky/pre-commit) — one source of truth for "what has to pass,"
+      # so CI and local commits can never drift out of sync with each
+      # other. See docs/DETERMINISTIC_CORE_PATTERN.md's "Resolved: a lint
+      # rule enforces the readLatest()-before-commit() discipline" for
+      # why lint is part of this at all.
+      - name: Run the same checks as the pre-commit hook
+        run: sh .husky/pre-commit
