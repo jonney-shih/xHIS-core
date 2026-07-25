@@ -22,9 +22,11 @@ export type PatientSchedulingReactor = (
 ) => ReactToPatientEffectsForSchedulingResult;
 
 /** Mirrors `outboxRelayImaging.ts`'s `ImagingCommitter` — the minimal
- * shape needed to durably persist a scheduling reaction. */
+ * shape needed to durably persist a scheduling reaction and re-validate
+ * it against reality before each commit. */
 export interface SchedulingCommitter {
   commit(context: SchedulingContext, effects: readonly SchedulingEffect[]): void;
+  readLatest(): SchedulingContext | undefined;
 }
 
 export interface RelayPatientEffectsToSchedulingResult {

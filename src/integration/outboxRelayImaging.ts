@@ -22,9 +22,11 @@ export type PatientImagingReactor = (
 ) => ReactToPatientEffectsForImagingResult;
 
 /** Mirrors `outboxRelayLab.ts`'s `LabCommitter` — the minimal shape
- * needed to durably persist an imaging reaction. */
+ * needed to durably persist an imaging reaction and re-validate it
+ * against reality before each commit. */
 export interface ImagingCommitter {
   commit(context: ImagingContext, effects: readonly ImagingEffect[]): void;
+  readLatest(): ImagingContext | undefined;
 }
 
 export interface RelayPatientEffectsToImagingResult {

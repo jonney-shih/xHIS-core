@@ -15,9 +15,11 @@ export type PatientLabReactor = (
 ) => ReactToPatientEffectsForLabResult;
 
 /** Mirrors `outboxRelay.ts`'s `BedCommitter` — the minimal shape needed
- * to durably persist a lab reaction. */
+ * to durably persist a lab reaction and re-validate it against reality
+ * before each commit. */
 export interface LabCommitter {
   commit(context: LabContext, effects: readonly LabEffect[]): void;
+  readLatest(): LabContext | undefined;
 }
 
 export interface RelayPatientEffectsToLabResult {

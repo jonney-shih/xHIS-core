@@ -1298,8 +1298,14 @@ concern instead of a single domain.
   check — `EntryAlreadyExists`/`BedAlreadyOccupied` were being checked
   against whatever snapshot Do happened to run against, not the shell's
   real state at commit time — so this fix protects them the same way,
-  with no domain-specific code required; the seam lives entirely in
-  `act()`/`shell.ts`, below every domain.
+  with no domain-specific code required. **Correction, not a silent
+  edit: this was slightly overstated.** "The seam lives entirely in
+  `act()`/`shell.ts`, below every domain" was only true for callers that
+  actually go through `act()`/`actHuman()` — it missed that
+  `core/io/relay.ts`'s outbox relay commits into the exact same stores
+  through a second, parallel path that this fix never touched. See
+  "Resolved: the outbox relay re-validates against reality before each
+  commit" below for what closing that second path required.
 - **What this doesn't prove:** that a real deployment's actual identity
   provider, LLM vendor, and approval-policy sign-off process are
   designed — those remain exactly as open as `docs/AGENTIC_LAYER.md`'s
@@ -1686,12 +1692,82 @@ changes to that loop itself.
   this relay to run on a schedule, a queue trigger, or any other real
   delivery mechanism — `relayEffects` and its wrapper are the delivery
   *logic*, not a deployed job; the same gap every other relay in this
-  codebase already has. This was the last of the concrete, already-
-  named gaps this document's agentic-layer/choreography arc opened
-  with; what remains open is the set of larger, harder questions
-  `docs/AGENTIC_LAYER.md`'s "Open questions for review" section already
-  names — real risk tiers, real approval-policy sign-off, unifying the
-  agentic and human-initiated audit trails, and multi-process
-  `createFileShell` coordination — none of which are code changes
-  waiting to be made so much as institutional decisions waiting to be
-  taken.
+  codebase already has. At the time this section was written, that was
+  the last of the concrete, already-named gaps this document's
+  agentic-layer/choreography arc opened with. **A proactive sweep for a
+  different, related pattern then found one more — see below.**
+
+## Resolved: the outbox relay re-validates against reality before each commit
+
+A proactive, codebase-wide sweep for the same "frozen value trusted at
+the wrong moment" pattern the OCC fix and the nursing-identity fix each
+closed — requested after both had been found by asking a narrower
+question twice — surfaced a real gap in `core/io/relay.ts`'s
+`relayEffects`, the domain-agnostic loop underneath every
+`outboxRelay*.ts` wrapper (bed/lab/imaging/scheduling). It committed
+via a plain `EffectCommitter` — `commit()` only, no `readLatest()` — so
+it never re-validated against the target domain's actual latest
+committed state before writing, even though at least one domain (bed)
+has a second, independent writer into the exact same commit log: direct
+`AssignBed`/`ReleaseBed` through the agentic/human pipeline, which *is*
+OCC-protected. The relay predates the OCC fix entirely and was never
+brought under it.
+
+- **The proof came first, as its own commit, the same discipline every
+  finding in this document follows.**
+  `tests/integration/outboxRelayStaleCommitRace.test.ts` originally
+  asserted the *broken* behavior: a direct `AssignBed` for encounter-5
+  landing before the relay processes a new admission for encounter-1,
+  and the relay's stale, internally-threaded context still believing
+  the same bed was free — reassigning it and committing a
+  whole-context replacement that silently erased encounter-5's real,
+  already-committed occupancy. Only after that test passed (proving the
+  gap, not hypothesizing it) was the fix designed.
+- **The fix mirrors the OCC fix's own shape exactly: stop trusting an
+  already-computed value, force a fresh read at the moment of use —
+  now applied to a loop that can commit more than once per call, not
+  just a single commit.** `EffectCommitter` (and all four wrapper
+  interfaces, `BedCommitter`/`LabCommitter`/`ImagingCommitter`/
+  `SchedulingCommitter`) now require `readLatest(): TTargetCtx | undefined`.
+  Inside `relayEffects`'s loop, each iteration now computes
+  `targetCommitter.readLatest() ?? context` and reacts against *that*,
+  not the context threaded forward from the previous iteration —
+  falling back to the threaded value only when nothing has ever been
+  committed yet, the same `baselineContext` role `act()`'s own fix
+  established.
+- **Confirmed structurally free, not just cheap, because the interface
+  was already there — this is why widening `EffectCommitter` broke
+  nothing.** `createFileShell` and `createInMemoryShell` both already
+  had `readLatest()` from the original OCC fix; every existing test
+  caller of every `outboxRelay*.ts` wrapper already passes one of those
+  two, not a hand-rolled minimal object. Verified empirically, in
+  sequence: widening `EffectCommitter`'s type alone (before touching
+  `relayEffects`'s loop) left the entire suite passing unchanged, and
+  only the deliberately-planted proof test failed once the loop itself
+  was rewritten to actually call `readLatest()` — isolating exactly
+  which change did what, rather than changing both at once and hoping.
+- **Re-run against the very test that proved the bug, this time proving
+  the fix, plus a second case proving the fix isn't merely
+  conservative.** The rewritten `outboxRelayStaleCommitRace.test.ts`
+  asserts the relay now correctly assigns encounter-1 to bed-2 instead
+  of bed-1, and that *both* assignments — encounter-5's direct one and
+  encounter-1's new one — survive in the committed state, not just that
+  nothing got overwritten. A second case commits direct assignments to
+  *both* beds before the relay runs and confirms it correctly reports
+  `no-bed-available` rather than either overwriting anything or
+  papering over a genuine conflict.
+- **A prior claim in this same document — that the OCC fix "protects
+  \[ledger and bed] the same way... the seam lives entirely in
+  `act()`/`shell.ts`, below every domain" — was corrected in place
+  above, not silently edited,** once this section made clear that
+  claim was true only for callers going through `act()`/`actHuman()`,
+  not for the relay's own, separate commit path into the same stores.
+- **What this doesn't prove:** `src/integration/externalLabResultAdapter.ts`'s
+  `ingestExternalLabResult` has the identical shape — it commits via
+  the same widened `LabCommitter` interface but was not itself changed
+  to call `readLatest()`, and lab has at least three independent
+  writers (the agentic pipeline, `outboxRelayLab.ts`, and this adapter)
+  into the same `labCommitsFile`. Flagged in `docs/AGENTIC_LAYER.md` as
+  a related, same-root-cause suspicion, deliberately left unproven and
+  unfixed here — only the relay's own commit path was in scope for this
+  change.

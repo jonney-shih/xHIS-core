@@ -55,25 +55,20 @@ function commitPatientInstructions(context: PatientContext, instructions: readon
 }
 
 /**
- * Documents a real, currently-unguarded gap: `relayPatientEffectsToBed`
- * (and every other `outboxRelay*.ts` wrapper around `core/io/relay.ts`'s
- * `relayEffects`) commits via a plain `BedCommitter`/`EffectCommitter` —
- * `commit()` only, no `readLatest()` — so it never re-validates against
- * the bed domain's actual latest committed state the way `act()`/
- * `actHuman()` were fixed to. Bed has two independent writers into the
- * same `bedCommitsFile`: direct `AssignBed`/`ReleaseBed` through the
- * agentic/human pipeline (OCC-protected), and this relay reacting to
- * patient discharge/admission (not protected at all). This test
- * reproduces the second writer racing the first.
- *
- * Asserts the *current*, gapped behavior (it passes today, without any
- * fix) specifically to make the gap concrete before deciding how to
- * close it — the same "prove it empirically first" discipline
- * `actStaleCommitRace.test.ts` already applied to `act()`'s own
- * commit-time staleness.
+ * Originally documented a real, then-unguarded gap: `relayPatientEffectsToBed`
+ * (and every `outboxRelay*.ts` wrapper around `core/io/relay.ts`'s
+ * `relayEffects`) used to commit via a plain `BedCommitter`/`EffectCommitter` —
+ * `commit()` only, no `readLatest()` — so it never re-validated against
+ * bed's actual latest committed state before writing, even though a
+ * direct `AssignBed`/`ReleaseBed` through the agentic/human pipeline
+ * writes into the exact same `bedCommitsFile`. Now that `EffectCommitter`
+ * requires `readLatest()` and `relayEffects` re-derives `react`'s result
+ * against `targetCommitter.readLatest() ?? context` immediately before
+ * each commit (see `relay.ts`), this file proves the fix closes the race
+ * rather than merely describing it.
  */
-describe('relayPatientEffectsToBed races a direct AssignBed through the same bedCommitsFile', () => {
-  it('the relay\'s stale starting context silently overwrites a bed a direct commit already assigned in the real, current bed state', () => {
+describe('relayPatientEffectsToBed re-validates against the real bed state before each commit', () => {
+  it('a direct AssignBed that lands before the relay commits is never overwritten — the relay sees it and picks a different bed', () => {
     const shell = bedShell();
 
     // A direct assignment lands first — exactly what act()/actHuman()
@@ -96,10 +91,9 @@ describe('relayPatientEffectsToBed races a direct AssignBed through the same bed
 
     // The relay is invoked with `twoAvailableBeds` as its starting
     // context — stale relative to the real, current bed state (which
-    // already has bed-1 occupied by encounter-5), exactly what a caller
-    // holding an earlier snapshot would pass. Nothing in
-    // `relayPatientEffectsToBed`/`relayEffects` re-reads the real latest
-    // state before committing.
+    // already has bed-1 occupied by encounter-5) — exactly what a
+    // caller holding an earlier snapshot would pass. The fix: it no
+    // longer trusts that snapshot once something newer is on record.
     const result = relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
@@ -110,19 +104,67 @@ describe('relayPatientEffectsToBed races a direct AssignBed through the same bed
       bedIsoTimestamp('2026-07-18T00:02:00.000Z'),
     );
 
-    // The bug: the relay's stale view thinks bed-1 is available, assigns
-    // it to encounter-1, and commits that — silently erasing
-    // encounter-5's already-real, already-committed occupancy of bed-1.
-    expect(result.outcomes).toEqual([{ kind: 'assigned', encounterId: 'encounter-1', bedId: 'bed-1' }]);
+    // The relay correctly sees bed-1 is already occupied and assigns
+    // bed-2 instead — not because `twoAvailableBeds` said so, but
+    // because it re-read the real latest state before reacting.
+    expect(result.outcomes).toEqual([{ kind: 'assigned', encounterId: 'encounter-1', bedId: 'bed-2' }]);
 
     const commits = readCommits<BedContext, BedEffect>(bedCommitsFile);
     const latest = commits[commits.length - 1]!.context;
 
-    // What the real, current bed state should say: bed-1 still occupied
-    // by encounter-5, bed-2 now occupied by encounter-1 (the only
-    // genuinely available bed). What it actually says, because of this
-    // gap: bed-1 reassigned to encounter-1, encounter-5's occupancy gone
-    // without a trace.
-    expect(latest.beds['bed-1']).toMatchObject({ status: 'occupied', encounterId: 'encounter-1' });
+    // Both assignments survive: encounter-5's direct one, untouched,
+    // and encounter-1's new one — proving the fix doesn't just avoid
+    // committing garbage, it correctly merges with what changed
+    // underneath it.
+    expect(latest.beds['bed-1']).toMatchObject({ status: 'occupied', encounterId: 'encounter-5' });
+    expect(latest.beds['bed-2']).toMatchObject({ status: 'occupied', encounterId: 'encounter-1' });
+  });
+
+  it('reports no-bed-available, rather than overwriting anything, when the real current state leaves nothing free', () => {
+    const shell = bedShell();
+
+    // Both beds get directly occupied by other encounters after the
+    // relay's caller would have taken its (now stale) starting snapshot.
+    const firstAssign = bedEngine.execute(twoAvailableBeds, {
+      kind: 'AssignBed',
+      bedId: bedId('bed-1'),
+      encounterId: encounterId('encounter-5'),
+      assignedAt: bedIsoTimestamp('2026-07-18T00:00:00.000Z'),
+    });
+    expect(firstAssign.ok).toBe(true);
+    if (!firstAssign.ok) throw new Error('expected ok');
+    shell.commit(firstAssign.value.context, firstAssign.value.effects);
+
+    const secondAssign = bedEngine.execute(firstAssign.value.context, {
+      kind: 'AssignBed',
+      bedId: bedId('bed-2'),
+      encounterId: encounterId('encounter-6'),
+      assignedAt: bedIsoTimestamp('2026-07-18T00:00:30.000Z'),
+    });
+    expect(secondAssign.ok).toBe(true);
+    if (!secondAssign.ok) throw new Error('expected ok');
+    shell.commit(secondAssign.value.context, secondAssign.value.effects);
+
+    commitPatientInstructions({ encounters: {} }, [
+      { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:01:00.000Z') },
+    ]);
+
+    const result = relayPatientEffectsToBed(
+      patientCommitsFile,
+      createFileOutboxCursor(cursorFile),
+      shell,
+      bedEngine,
+      twoAvailableBeds,
+      EXAMPLE_firstAvailableBedStrategy,
+      bedIsoTimestamp('2026-07-18T00:02:00.000Z'),
+    );
+
+    expect(result.outcomes).toEqual([{ kind: 'no-bed-available', encounterId: 'encounter-1' }]);
+
+    const commits = readCommits<BedContext, BedEffect>(bedCommitsFile);
+    expect(commits).toHaveLength(2); // only the two direct assignments — the relay committed nothing
+    const latest = commits[commits.length - 1]!.context;
+    expect(latest.beds['bed-1']).toMatchObject({ status: 'occupied', encounterId: 'encounter-5' });
+    expect(latest.beds['bed-2']).toMatchObject({ status: 'occupied', encounterId: 'encounter-6' });
   });
 });

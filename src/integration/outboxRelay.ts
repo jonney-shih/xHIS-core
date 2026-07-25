@@ -26,15 +26,17 @@ export type PatientBedReactor = (
   timestamp: IsoTimestamp,
 ) => ReactToPatientEffectsResult;
 
-/** The minimal shape this relay needs to durably persist a bed reaction —
- * deliberately not the agentic `ImperativeShell`, since that interface's
- * `recordAudit` is tied to `AuditRecord`'s `PlanProposal`/`VerifyDecision`
- * shape, neither of which exists for a plain choreographed reaction. A
+/** The minimal shape this relay needs to durably persist a bed reaction
+ * *and* re-validate it against reality before each commit — deliberately
+ * not the agentic `ImperativeShell`, since that interface's `recordAudit`
+ * is tied to `AuditRecord`'s `PlanProposal`/`VerifyDecision` shape, neither
+ * of which exists for a plain choreographed reaction. A
  * `createFileShell<BedContext, BedInstruction, BedEffect>(...)` already
- * satisfies this structurally — it just has one method more than this
- * needs. */
+ * satisfies this structurally — it just has one method (`recordAudit`)
+ * more than this needs. */
 export interface BedCommitter {
   commit(context: BedContext, effects: readonly BedEffect[]): void;
+  readLatest(): BedContext | undefined;
 }
 
 export interface RelayPatientEffectsToBedResult {
