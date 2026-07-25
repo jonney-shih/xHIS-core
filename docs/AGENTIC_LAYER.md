@@ -985,15 +985,19 @@ signs off on any of this) rather than merely unbuilt.
     `act()`/`actHuman()`, but the relay's `targetCommitter.commit()`
     call was a second, parallel commit path into the same store that
     had never been brought under that seam at all, until now.
-  - **A related, same-root-cause suspicion, still not proven with its
-    own test.** `src/integration/externalLabResultAdapter.ts`'s
-    `ingestExternalLabResult` commits via the same `LabCommitter`
-    shape (now widened to require `readLatest()`, satisfied structurally
-    by any real shell, but `ingestExternalLabResult` itself was not
-    changed to actually call it), and lab has at least three independent
-    writers (the agentic pipeline, `outboxRelayLab.ts`, and this
-    adapter) into the same `labCommitsFile`. Explicitly out of scope for
-    this fix — only the relay's own commit path was touched.
+  - **A related, same-root-cause suspicion — proven and fixed too, in a
+    follow-up pass.** `src/integration/externalLabResultAdapter.ts`'s
+    `ingestExternalLabResult` had the identical shape: it committed via
+    the same `LabCommitter` (widened to require `readLatest()` by the
+    relay fix, but not yet changed to call it), and lab has at least
+    three independent writers (the agentic pipeline, `outboxRelayLab.ts`,
+    and this adapter) into the same `labCommitsFile`. Proven first —
+    a direct `CancelLabOrder` for an unrelated order, landing before an
+    external result message is ingested from a now-stale `labContext`,
+    used to get silently reverted back to `'ordered'` by the ingest's
+    own commit. Fixed the same way: `ingestExternalLabResult` now reacts
+    against `labCommitter.readLatest() ?? labContext`, not `labContext`
+    directly.
   - **Status: fixed for the relay, mirroring the OCC fix's own shape —
     stop trusting the internally-threaded context, force a fresh read
     immediately before each commit.** `EffectCommitter`
@@ -1017,5 +1021,5 @@ signs off on any of this) rather than merely unbuilt.
     anything or silently succeeding. See
     `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: the outbox relay
     re-validates against reality before each commit" for the full
-    write-up. `externalLabResultAdapter.ts` remains open, per the
-    bullet above.
+    write-up, and the same section's follow-up for
+    `externalLabResultAdapter.ts` — fixed too, per the bullet above.

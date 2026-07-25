@@ -47,7 +47,17 @@ const message: ExternalLabResultMessage = {
 
 function recordingCommitter(): { committer: LabCommitter; commits: readonly (readonly LabEffect[])[] } {
   const commits: (readonly LabEffect[])[] = [];
-  return { committer: { commit: (_context, effects) => commits.push(effects) }, commits };
+  let latestContext: LabContext | undefined;
+  return {
+    committer: {
+      commit: (context, effects) => {
+        commits.push(effects);
+        latestContext = context;
+      },
+      readLatest: () => latestContext,
+    },
+    commits,
+  };
 }
 
 describe('reactToExternalLabResultMessage', () => {
@@ -130,5 +140,58 @@ describe('ingestExternalLabResult', () => {
       orderId: 'order-1',
       error: { kind: 'LabOrderNotPending', orderId: 'order-1' },
     });
+  });
+});
+
+describe('ingestExternalLabResult re-validates against the real lab state before committing', () => {
+  it('a direct cancellation of an unrelated order is not erased when a result is ingested from a stale snapshot', () => {
+    const store = createFileMessageIdempotencyStore(storeFile);
+    const { committer } = recordingCommitter();
+
+    const contextWithTwoPendingOrders: LabContext = {
+      orders: {
+        'order-1': {
+          orderId: labOrderId('order-1'),
+          encounterId: encounterId('encounter-1'),
+          testCode: 'CBC',
+          status: 'ordered',
+          orderedAt: isoTimestamp('2026-07-20T00:00:00.000Z'),
+        },
+        'order-2': {
+          orderId: labOrderId('order-2'),
+          encounterId: encounterId('encounter-1'),
+          testCode: 'BMP',
+          status: 'ordered',
+          orderedAt: isoTimestamp('2026-07-20T00:00:00.000Z'),
+        },
+      },
+    };
+
+    // A direct cancellation of order-2 lands first — exactly what a
+    // discharge choreographed via patientToLab.ts, or a direct
+    // CancelLabOrder through the agentic/human pipeline, would produce.
+    // Entirely unrelated to the external result message below.
+    const cancelResult = labEngine.execute(contextWithTwoPendingOrders, {
+      kind: 'CancelLabOrder',
+      orderId: labOrderId('order-2'),
+      cancelledAt: isoTimestamp('2026-07-20T00:30:00.000Z'),
+    });
+    expect(cancelResult.ok).toBe(true);
+    if (!cancelResult.ok) throw new Error('expected ok');
+    committer.commit(cancelResult.value.context, cancelResult.value.effects);
+
+    // An external result for order-1 arrives, but the caller's
+    // `labContext` argument predates the cancellation above — exactly
+    // what a receiver holding an earlier snapshot would pass.
+    const result = ingestExternalLabResult(store, committer, labEngine, contextWithTwoPendingOrders, message);
+
+    expect(result.outcome).toEqual({ kind: 'ingested', orderId: 'order-1' });
+
+    const latest = result.context;
+    expect(latest.orders['order-1']!.status).toBe('resulted');
+    // The fix: order-2's real, already-committed cancellation survives —
+    // it is not silently reverted back to 'ordered' by a commit computed
+    // from a snapshot that never knew about the cancellation.
+    expect(latest.orders['order-2']!.status).toBe('cancelled');
   });
 });

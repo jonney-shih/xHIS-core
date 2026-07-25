@@ -93,6 +93,16 @@ export interface IngestExternalLabResultResult {
  * state-based check is what catches it if they're ever not — see
  * `tests/integration/externalLabResultAdapter.test.ts`'s
  * belt-and-suspenders test for the empirical proof.
+ *
+ * Reacts against `labCommitter.readLatest() ?? labContext`, not
+ * `labContext` directly — the same fix `relayEffects` needed for the
+ * identical reason: lab has other independent writers (the agentic
+ * pipeline, `outboxRelayLab.ts`) into the same store, and a `labContext`
+ * argument that predates one of their commits must not get blindly
+ * built on top of and overwrite what they already committed. See
+ * `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: the outbox relay
+ * re-validates against reality before each commit" for the sibling fix
+ * this one mirrors.
  */
 export function ingestExternalLabResult(
   store: MessageIdempotencyStore,
@@ -105,7 +115,8 @@ export function ingestExternalLabResult(
     return { context: labContext, outcome: { kind: 'duplicate', messageControlId: message.messageControlId } };
   }
 
-  const reaction = reactToExternalLabResultMessage(labEngine, labContext, message);
+  const latest = labCommitter.readLatest() ?? labContext;
+  const reaction = reactToExternalLabResultMessage(labEngine, latest, message);
 
   if (reaction.outcome.kind === 'ingestion-failed') {
     return { context: reaction.context, outcome: reaction.outcome };

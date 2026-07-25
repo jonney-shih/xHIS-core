@@ -1762,12 +1762,46 @@ brought under it.
   above, not silently edited,** once this section made clear that
   claim was true only for callers going through `act()`/`actHuman()`,
   not for the relay's own, separate commit path into the same stores.
-- **What this doesn't prove:** `src/integration/externalLabResultAdapter.ts`'s
-  `ingestExternalLabResult` has the identical shape — it commits via
+- **What this doesn't prove, at the time this section was first
+  written:** `src/integration/externalLabResultAdapter.ts`'s
+  `ingestExternalLabResult` had the identical shape — it committed via
   the same widened `LabCommitter` interface but was not itself changed
   to call `readLatest()`, and lab has at least three independent
   writers (the agentic pipeline, `outboxRelayLab.ts`, and this adapter)
-  into the same `labCommitsFile`. Flagged in `docs/AGENTIC_LAYER.md` as
-  a related, same-root-cause suspicion, deliberately left unproven and
-  unfixed here — only the relay's own commit path was in scope for this
-  change.
+  into the same `labCommitsFile`. **That's since been closed too — see
+  immediately below.**
+
+### Follow-up: externalLabResultAdapter.ts fixed the same way
+
+Same root cause, proven and fixed in a direct follow-up rather than
+left as a standing suspicion.
+
+- **Proven first, exactly the same discipline.**
+  `tests/integration/externalLabResultAdapter.test.ts` gained a case
+  asserting the *broken* behavior: a direct `CancelLabOrder` for
+  order-2 lands, entirely unrelated to an external HL7-shaped result
+  message about order-1 that arrives next — but the message is
+  ingested against a `labContext` argument that predates the
+  cancellation. The bug: `ingestExternalLabResult`'s commit, built from
+  that stale context, silently reverted order-2 back to `'ordered'`.
+  Run alone before any fix, this case failed exactly as predicted
+  (`expected 'ordered' to be 'cancelled'`) — confirming the gap, not
+  assuming it from the relay's analogous shape.
+- **The fix is one line, mirroring the relay's exactly.**
+  `ingestExternalLabResult` now reacts against
+  `labCommitter.readLatest() ?? labContext`, not `labContext` directly.
+  `LabCommitter` already required `readLatest()` from the relay fix, so
+  no interface change was needed here — only the two real callers
+  (`tests/integration/externalLabResultAdapter.test.ts`'s
+  `recordingCommitter()`, which had to start tracking and exposing the
+  latest committed context to keep satisfying the now-real requirement)
+  needed updating.
+- **What this doesn't prove:** that every future caller of `commit()`-
+  shaped interfaces in this codebase has been swept for the same
+  pattern — this and the relay fix closed the two instances a proactive
+  sweep actually found and named; a new caller built later could still
+  reintroduce the same shape if it commits without reading latest
+  first. Nothing here adds a structural guard (e.g. a lint rule or a
+  type-level constraint) against that — the fix is per-caller
+  discipline, applied twice now, not a mechanism that makes the mistake
+  impossible to write a third time.
