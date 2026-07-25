@@ -1874,11 +1874,19 @@ also calling `.readLatest()` on the same receiver somewhere.
 remembering to run it — the same "per-caller discipline" gap this rule
 exists to close in the first place. `husky` (this codebase's first
 git-hook tooling, same "introduced specifically for this need" scoping
-as `eslint` itself) now runs `npm run lint` in a `.husky/pre-commit`
-hook, version-controlled so every clone of this repository gets it via
-`npm install`'s `prepare` script, not just this one local checkout.
-Proven, not assumed: staging a deliberately reintroduced copy of the
-`badCommit` scratch case and attempting a real `git commit` was
-actually rejected (`husky - pre-commit script failed (code 1)`, commit
-never created, confirmed against `git log`) before this was trusted
-and the scratch file removed again.
+as `eslint` itself) now runs `npm run lint && npm run typecheck && npm test`
+in a `.husky/pre-commit` hook, version-controlled so every clone of
+this repository gets it via `npm install`'s `prepare` script, not just
+this one local checkout. `&&`-chained deliberately, not one command per
+line: a plain shell script's exit code is only its *last* command's,
+so without chaining (or `set -e`), a lint failure followed by a
+passing typecheck/test would leave the overall hook exiting `0` and
+the commit would go through anyway — silently defeating the whole
+point. Proven twice, not assumed: staging a deliberately reintroduced
+copy of the `badCommit` scratch case and running the hook directly
+confirmed it stops at the failing lint step without ever reaching
+typecheck or test, and a real `git commit` attempt with the same
+scratch case staged was actually rejected
+(`husky - pre-commit script failed (code 1)`, commit never created,
+confirmed against `git log`) before either was trusted and the scratch
+file removed again.
