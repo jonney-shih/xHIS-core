@@ -11,7 +11,23 @@ the design and the TypeScript-specific rules that keep that guarantee real.
 
 ```sh
 npm install
+npm run lint        # eslint . — includes a custom rule, see below
 npm run typecheck   # tsc --noEmit — this is the exhaustiveness gate
 npm test            # vitest
 npm run build       # tsc -> dist/
 ```
+
+`npm install` also sets up a `pre-commit` git hook (via
+[husky](https://typicode.github.io/husky/), configured in
+[`.husky/pre-commit`](.husky/pre-commit)) that runs
+`npm run lint && npm run typecheck && npm test` before every commit —
+version-controlled, so every clone gets it automatically, not just
+whoever set it up first. `eslint.config.js` and
+[`eslint-rules/no-commit-without-fresh-read.js`](eslint-rules/no-commit-without-fresh-read.js)
+are this project's own custom lint rule, added after the same
+"trusted-a-stale-snapshot-instead-of-reading-latest-state" mistake was
+found and fixed twice in real code — see
+[`docs/DETERMINISTIC_CORE_PATTERN.md`](docs/DETERMINISTIC_CORE_PATTERN.md)'s
+"Resolved: a lint rule enforces the readLatest()-before-commit()
+discipline" for the full story, including why the rule checks
+*presence*, not ordering.
