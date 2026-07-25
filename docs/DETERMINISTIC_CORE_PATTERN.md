@@ -1494,11 +1494,12 @@ one-to-many.
   durable outbox relay existed yet for scheduling —
   `patientToLab.ts`/`patientToImaging.ts` both eventually got one
   (`outboxRelayLab.ts`/`outboxRelayImaging.ts`), built as a deliberately
-  separate, later step each time; the same remains true here, still not
-  done. Nor did this address the remaining gap from the original
-  synthesis question — a human-initiated `ImperativeShell` path still
-  didn't exist. **That's since been closed too — see below, which
-  closes the original synthesis question's three named gaps
+  separate, later step each time; the same was true here too, at first.
+  **`outboxRelayScheduling.ts` has since closed that too — see the
+  final section below.** Nor did this address the remaining gap from
+  the original synthesis question — a human-initiated `ImperativeShell`
+  path still didn't exist. **That's since been closed too — see below,
+  which closes the original synthesis question's three named gaps
   completely.**
 
 ## Resolved: the human-initiated ImperativeShell path
@@ -1647,3 +1648,50 @@ freshness of an `IdentityProvider` a caller already has in hand before
   inherently live queries with no separate snapshot step, so this
   specific trap is particular to a provider backed by this codebase's
   own committed state, which today is only `createNursingIdentityProvider`.
+
+## Resolved: outboxRelayScheduling.ts
+
+The last of the small, already-named loose ends: `patientToLab.ts` and
+`patientToImaging.ts` had each eventually gotten a durable outbox
+relay (`outboxRelayLab.ts`/`outboxRelayImaging.ts`) as a deliberately
+separate, later step after their in-process choreography landed;
+scheduling's own `patientToScheduling.ts` had not yet, until now.
+`src/integration/outboxRelayScheduling.ts` mirrors
+`outboxRelayImaging.ts` exactly — a thin wrapper around
+`core/io/relay.ts`'s already-domain-agnostic `relayEffects` loop, the
+same wrapper shape bed/lab/imaging each already proved needs no
+changes to that loop itself.
+
+- **Nothing new to prove about `relayEffects` — this call site is
+  purely mechanical, and that's the point.** `relayEffects` was already
+  confirmed domain-agnostic by lab and imaging each being a second and
+  third real caller with genuinely different reaction shapes (lab: no
+  selection strategy at all; imaging: cancel-pending one-to-many).
+  Scheduling's `react` closure (`reactToPatientEffectsForScheduling`)
+  has the identical one-to-many, no-selection-strategy shape imaging's
+  already has, so writing this wrapper required zero changes to
+  `relayEffects`, `RelayResult`, or `EffectCommitter` — confirmed by
+  running the full suite immediately after, not just expected by
+  analogy.
+- **The `subjectId`-vs-`EncounterId` weaker link
+  (`schedulingLookup.ts`) carries through the relay unchanged, and is
+  exercised there too, not just in the in-process reaction.**
+  `outboxRelayScheduling.test.ts`'s fourth case relays a durably
+  committed discharge against a `SchedulingContext` containing only a
+  `'quarterly-maintenance'`-`subjectId` booking — unrelated to any
+  encounter — and confirms it's left untouched even when the discharge
+  arrives through the durable relay path, not just the direct
+  in-process one `patientToScheduling.test.ts` already covered.
+- **What this doesn't prove:** that a real deployment actually wires
+  this relay to run on a schedule, a queue trigger, or any other real
+  delivery mechanism — `relayEffects` and its wrapper are the delivery
+  *logic*, not a deployed job; the same gap every other relay in this
+  codebase already has. This was the last of the concrete, already-
+  named gaps this document's agentic-layer/choreography arc opened
+  with; what remains open is the set of larger, harder questions
+  `docs/AGENTIC_LAYER.md`'s "Open questions for review" section already
+  names — real risk tiers, real approval-policy sign-off, unifying the
+  agentic and human-initiated audit trails, and multi-process
+  `createFileShell` coordination — none of which are code changes
+  waiting to be made so much as institutional decisions waiting to be
+  taken.
