@@ -1796,12 +1796,75 @@ left as a standing suspicion.
   `recordingCommitter()`, which had to start tracking and exposing the
   latest committed context to keep satisfying the now-real requirement)
   needed updating.
-- **What this doesn't prove:** that every future caller of `commit()`-
-  shaped interfaces in this codebase has been swept for the same
-  pattern — this and the relay fix closed the two instances a proactive
-  sweep actually found and named; a new caller built later could still
-  reintroduce the same shape if it commits without reading latest
-  first. Nothing here adds a structural guard (e.g. a lint rule or a
-  type-level constraint) against that — the fix is per-caller
-  discipline, applied twice now, not a mechanism that makes the mistake
-  impossible to write a third time.
+- **What this doesn't prove, at the time this section was first
+  written:** that every future caller of `commit()`-shaped interfaces
+  in this codebase has been swept for the same pattern — this and the
+  relay fix closed the two instances a proactive sweep actually found
+  and named; a new caller built later could still reintroduce the same
+  shape if it commits without reading latest first. Nothing here added
+  a structural guard against that — the fix was per-caller discipline,
+  applied twice, not a mechanism that made the mistake impossible to
+  write a third time. **A custom lint rule closes exactly that gap —
+  see below.**
+
+## Resolved: a lint rule enforces the readLatest()-before-commit() discipline
+
+Both the OCC fix and its `externalLabResultAdapter.ts` follow-up were
+per-caller discipline, applied by hand, twice — exactly the shape of
+mistake that tends to get reintroduced a third time by someone who
+never read either "Resolved" section. `eslint-rules/no-commit-without-fresh-read.js`,
+wired into a new `eslint.config.js` (this codebase's first lint
+infrastructure at all — introduced specifically for this rule, not a
+general adoption of a linting standard), makes it a build-time error
+for any function to call `.commit(...)` on a value shaped like
+`{ commit(...): void; readLatest(): ... }` without that same function
+also calling `.readLatest()` on the same receiver somewhere.
+
+- **A presence check, not an ordering or dataflow proof — and getting
+  that distinction right took an actual failed attempt, not just
+  foresight.** The first version of the rule tried to check that
+  `readLatest()` appeared *earlier in the source* than the matching
+  `commit()` call, and it produced false positives on `act()` and
+  `actHuman()` — both real, already-correct code. The reason:
+  `finalize`'s `.commit()` call sits in a small closure *defined*
+  before `commitAfterFreshCheck`'s `.readLatest()` call in the source
+  text, even though every path that actually reaches a commit calls
+  `commitAfterFreshCheck` (and therefore `readLatest()`) first at
+  runtime — source position and execution order aren't the same thing
+  once closures are involved, and this codebase's own style leans on
+  exactly that shape. Proving true execution order would need real
+  control-flow analysis; the rule now just checks *presence* anywhere
+  in the same outermost enclosing function, which is all "was
+  `readLatest()` forgotten entirely" — the actual shape of both real
+  bugs — ever needed.
+- **The boundary has to be the *outermost* enclosing function, not the
+  innermost, for the same reason.** `act()`/`actHuman()` call
+  `.commit()` from inside `finalize` and `.readLatest()` from inside a
+  *different* nested closure (`commitAfterFreshCheck`) — neither one
+  calls both itself, only their shared outer function does. The rule
+  walks up every ancestor function and keeps the outermost one as the
+  boundary, specifically so this shape checks out.
+- **Proven against both a deliberately broken case and the real
+  codebase, not just assumed to work.** A throwaway scratch file with
+  a `badCommit` (commits without ever calling `readLatest()`) and a
+  `goodCommit` (does) confirmed the rule flags exactly the first and
+  not the second, before it was trusted against real source — then
+  `npm run lint` against the actual codebase came back clean, covering
+  all four real call sites (`act()`, `actHuman()`, `relayEffects()`,
+  `ingestExternalLabResult()`).
+- **What this doesn't prove:** that the rule catches every conceivable
+  variant of the mistake — it only recognizes a direct
+  `identifier.commit(...)`/`identifier.readLatest()` call shape (not,
+  say, a destructured `{ commit } = committer` or a re-exported
+  wrapper function that calls `commit()` on a parameter passed through
+  from elsewhere), and it only fires for receivers whose *type*
+  structurally has a `readLatest` property, so a committer-shaped
+  object typed as `unknown` or `any` at the call site would slip past
+  it. It also doesn't (and structurally can't, without real
+  control-flow analysis) prove `readLatest()` actually runs before
+  `commit()` on every path — only that the author didn't forget it
+  entirely. `eslint.config.js` type-checks against `tsconfig.json` and
+  is scoped to `src/**/*.ts` only, matching `npm run typecheck`'s own
+  scope — test files are not covered, so a test's own hand-rolled fake
+  committer (like `externalLabResultAdapter.test.ts`'s
+  `recordingCommitter()`) is not linted, only real source callers are.
