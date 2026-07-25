@@ -1868,3 +1868,17 @@ also calling `.readLatest()` on the same receiver somewhere.
   scope — test files are not covered, so a test's own hand-rolled fake
   committer (like `externalLabResultAdapter.test.ts`'s
   `recordingCommitter()`) is not linted, only real source callers are.
+
+**Follow-up: wired into a `pre-commit` hook, not just run on demand.**
+`npm run lint` catching the mistake is only as good as someone
+remembering to run it — the same "per-caller discipline" gap this rule
+exists to close in the first place. `husky` (this codebase's first
+git-hook tooling, same "introduced specifically for this need" scoping
+as `eslint` itself) now runs `npm run lint` in a `.husky/pre-commit`
+hook, version-controlled so every clone of this repository gets it via
+`npm install`'s `prepare` script, not just this one local checkout.
+Proven, not assumed: staging a deliberately reintroduced copy of the
+`badCommit` scratch case and attempting a real `git commit` was
+actually rejected (`husky - pre-commit script failed (code 1)`, commit
+never created, confirmed against `git log`) before this was trusted
+and the scratch file removed again.

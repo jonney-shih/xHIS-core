@@ -9,11 +9,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "benchmark": "vitest run --config vitest.benchmark.config.ts"
+    "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "eslint": "^10.8.0",
+    "husky": "^9.1.7",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.65.0",
     "vitest": "^2.0.5"
