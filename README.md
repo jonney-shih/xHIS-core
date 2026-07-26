@@ -31,3 +31,9 @@ found and fixed twice in real code — see
 "Resolved: a lint rule enforces the readLatest()-before-commit()
 discipline" for the full story, including why the rule checks
 *presence*, not ordering.
+
+## Contributing
+
+`master` is a protected branch — no direct pushes, every change lands
+through a pull request whose `verify` check has passed. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the actual workflow.
