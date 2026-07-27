@@ -22,3 +22,22 @@ export type IsoTimestamp = Brand<string, 'IsoTimestamp'>;
 export function isoTimestamp(value: string): IsoTimestamp {
   return value as IsoTimestamp;
 }
+
+/**
+ * A logical sequence number — "happened before/after," expressed as an
+ * integer position in an event log, never as a duration or wall-clock
+ * value. Exists so that code which only needs *ordering* (which of two
+ * committed things came first) has a typed alternative to reaching for
+ * `IsoTimestamp` and comparing strings, or worse, reaching for the system
+ * clock to break a tie. Like `IsoTimestamp`, this is plain data a caller
+ * assigns and passes in (e.g. the index of an instruction within a
+ * batch, or a durable cursor position) — never something this module or
+ * any handler generates by observing "now," which would reintroduce the
+ * exact ambient-time dependency `IsoTimestamp`'s own doc comment and
+ * `determinism.guard.test.ts` exist to keep out.
+ */
+export type Tick = Brand<number, 'Tick'>;
+
+export function tick(value: number): Tick {
+  return value as Tick;
+}
