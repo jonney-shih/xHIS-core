@@ -1905,3 +1905,100 @@ trusting the workflow file, not just written and assumed correct:
 `npm ci` (a clean install from `package-lock.json`, the same command
 CI runs, not `npm install`) followed by `sh .husky/pre-commit` — the
 exact two steps the workflow performs — passed end to end.
+
+## Resolved: replay determinism and bounded allocation, made explicit
+
+Everything above proves determinism *by absence* — no caller has ever
+been caught reaching for `Date.now()`, `Math.random()`, or ambient I/O.
+That's a real guarantee (the guard test would fail the moment it
+stopped being true), but it's an inference from "nothing forbidden was
+found," not a demonstration of the actual property anyone building a
+second domain's core on this pattern cares about: replay a fixed
+instruction log on different hardware, at a different time, and get
+back the exact same state and effects, every time. Two gaps closed:
+
+- **A typed vocabulary for "ordering without a clock."**
+  `src/core/temporal.ts` already had `IsoTimestamp` — a branded string
+  instructions carry as data, never something a handler generates by
+  observing the system clock. It had no equivalent for *pure ordering*
+  ("this happened before that," with no duration or wall-clock value
+  attached), which left "count on the array index of an instruction
+  batch" as the only option, with nothing stopping a future need from
+  reaching for a real timestamp to fill that role instead — exactly the
+  ambient-time smell this whole pattern exists to keep out. `Tick`
+  (`temporal.ts`) is that missing type: a branded integer logical
+  sequence number, assigned and passed in by a caller exactly like
+  `IsoTimestamp` is — not a `Clock` service object with a `.now()`
+  method, which `docs/ARCHITECTURE.md`'s "Determinism is a convention"
+  section already explicitly bans from `ExecutionContext` (an injected
+  service with methods breaks JSON-serializability and is a disguised
+  way to smuggle ambient calls back in). `Tick` has no consumer yet in
+  this codebase — it is infrastructure for the next domain or the next
+  ordering need, sitting next to `IsoTimestamp` so reaching for a real
+  clock to express "before/after" stops being the path of least
+  resistance.
+- **The two guard gaps a determinism review actually found.**
+  `determinism.guard.test.ts`'s banned-pattern list covered `Date.now`,
+  `new Date`, and `Math.random`, but not `performance.now()` or
+  `process.hrtime()` — both exactly as replay-breaking as `Date.now()`,
+  just a different precision/API, and neither was actually present in
+  the codebase, but neither would have been *caught* if someone added
+  one. Same for `setTimeout`/`setInterval`: a handler whose effect
+  depends on event-loop scheduling is non-deterministic one level
+  removed from reading a clock directly. All four are now banned
+  identifiers in the same guard.
+- **Replay determinism proven by running it, not just by the absence
+  of banned calls.** `tests/core/engine.replay.test.ts` runs the same
+  instruction log through `executeSequence` against a fresh context
+  five independent times and asserts every run is deep-equal to the
+  first — the actual "same input log, replayed, produces identical
+  output" claim, checked directly, on the generic `counterEngine`
+  fixture (`tests/core/fixtures/counterEngine.ts`) that already existed
+  for exercising the execution core in isolation from any one domain.
+
+**Why memory is bounded without a fixed-capacity buffer, ring buffer,
+or object pool — and why none of those three were built.** The
+execution core is ordinary garbage-collected TypeScript: each handler
+call returns a freshly allocated `{ context, effects }` (never
+mutating its input, per `outcome.ts`), and `executeSequence` grows one
+`effects` array per call via `.push(...)`. A literal `ArrayBuffer`-
+backed arena or cache-line-aligned static buffer was considered and
+rejected — TypeScript/Node.js has no mechanism to control memory
+layout that specifically, and building one would still sit inside a
+V8 heap the runtime GCs regardless, so it would add real complexity for
+no actual determinism or safety gain. What "bounded, not unbounded"
+allocation means concretely here instead:
+
+- **Every handler call allocates O(1)** — a fixed, small number of
+  object literals per instruction, never a number that scales with
+  anything external. `tests/core/engine.replay.test.ts`'s
+  `it.each([1, 10, 100, 2000])` case proves the `effects` array
+  `executeSequence` builds has exactly one entry per instruction at
+  every one of those sizes — linear in the input, never super-linear,
+  and never duplicated or leaked across repeated calls against the
+  same engine instance.
+- **A batch-size ceiling already exists exactly where it should, and
+  deliberately not where it shouldn't.** An AI-sourced `PlanProposal`
+  is capped by `createMaxBatchSizeVerifier` before it ever reaches
+  `act()`/`executeSequence` — see `tests/agentic/verification/batchSizeRule.test.ts`.
+  `executeSequence` itself was deliberately *not* given a matching hard
+  ceiling: `src/human/actHuman.ts`'s own doc comment already explains
+  why a human directly issuing instructions is exempt from every
+  AI-proposal-specific check, batch size included — "no batch-size
+  heuristic that should apply to a legitimate large order set the way
+  it should to an AI proposing suspiciously many actions at once."
+  Adding a cap inside the shared engine would have silently overridden
+  that already-deliberate call for both paths at once; the ceiling
+  belongs, and stays, one layer up, only on the path that actually
+  needs it.
+- **Object pooling was considered and rejected for a correctness
+  reason, not a performance one.** Reusing a mutable buffer across
+  calls would mean a handler mutating a previous call's leftover state
+  before overwriting it — directly contradicting `outcome.ts`'s "never
+  mutated" contract that every replay/audit guarantee in this document
+  depends on. A subtle pool-recycling bug (a stale field surviving into
+  the next call) would be exactly the kind of silent, hard-to-reproduce
+  correctness bug this whole pattern exists to make impossible, in
+  exchange for GC pressure this system has no measured problem with.
+  Bounding *what comes in* (the verifier above) is the safe way to
+  bound allocation; reusing *what's already been allocated* is not.

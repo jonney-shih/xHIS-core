@@ -18,6 +18,17 @@ const BANNED_PATTERNS: readonly RegExp[] = [
   /\bprocess\.env\b/,
   /from\s+['"]node:fs['"]/,
   /from\s+['"]fs['"]/,
+  // Other ambient-time sources beyond Date.now/new Date: a wall- or
+  // monotonic-clock read is exactly as replay-breaking as either of
+  // those, whatever its precision or unit.
+  /\bperformance\.now\s*\(/,
+  /\bprocess\.hrtime\s*\(/,
+  // Ambient scheduling APIs make a handler's effect depend on *when*
+  // the event loop happens to run it, not just on its arguments — the
+  // same non-determinism this whole guard exists to keep out of the
+  // core, one level removed from reading a clock directly.
+  /\bsetTimeout\s*\(/,
+  /\bsetInterval\s*\(/,
 ];
 
 function collectSourceFiles(dir: string): string[] {
