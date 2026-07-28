@@ -648,6 +648,62 @@ Check would be an observable behavior change, not just a latency one.
   exactly as "Proposed" above predicted; that prediction has now been
   checked against two real slices, not just asserted once.
 
+## Resolved: the scheduler, closing the loop from Plan to Act
+
+`src/agentic/shell/scheduler.ts`'s `runScheduler` is the piece every
+prior slice deferred: for every proposal in a `ProposalLog` not yet
+acted on, fold its recorded verdicts via `resolveVerificationState`, and
+call `act()` exactly once the moment that reaches `resolved`. Proven by
+`tests/agentic/shell/scheduler.test.ts`, including an end-to-end run
+against the real file-backed `ProposalLog`/`VerificationRecordStore`.
+`act()`/`actHuman()` needed zero changes, exactly as predicted three
+times now (in "Proposed" above, and again in each of the two slices that
+followed it) — the prediction, not just the code, is what this section
+closes out.
+
+- **`act()`/`actHuman()`'s doc comments already described the exact call
+  the scheduler needed to make; nothing new had to be invented.**
+  `doOutcome = engine.executeSequence(shell.readLatest() ?? initialContext, proposal.instructions)`,
+  `reexecute` closing over the same instructions, `decision` supplied by
+  `resolveVerificationState` instead of a synchronous `combineVerifiers`
+  call — every piece already existed as a documented convention
+  (`tests/agentic/shell/act.test.ts` shows the identical call shape); the
+  scheduler's only real job is deciding *when* to make it.
+- **A real design question the doc sketch hadn't settled: is
+  "already acted" a cursor or a membership set — and this had to be
+  proven, not assumed, the same way the previous two slices' corrections
+  were.** Each `VerificationWorker` processes `ProposalLog` entries
+  strictly in order, but different workers advance at different paces,
+  and `foldVerdict` short-circuits to `resolved` on any single `reject`
+  without waiting for the rest of `requiredWorkers`. Concretely: a fast
+  worker can reject proposal 5 (resolving it immediately, no quorum
+  needed) while a slow worker hasn't reported on proposal 3 at all yet
+  (still `pending`) — resolution order does not have to match log order.
+  `tests/agentic/shell/scheduler.test.ts`'s "acts on a later proposal
+  that resolves before an earlier still-pending one" constructs exactly
+  this and confirms proposal 5 is acted on immediately while proposal 3
+  is correctly left for a later poll, never skipped and never blocking
+  proposal 5. A monotonic cursor cannot represent "5 is done, 3 is not";
+  `SchedulerActedStore` is therefore a durable membership set keyed by
+  `ProposalId`, the identical shape and the identical justification
+  `integration/externalMessageIdempotency.ts`'s `MessageIdempotencyStore`
+  already established for a different problem with the same root cause —
+  "already handled" has to key off identity, not off a position in a log
+  we don't fully control the ordering of.
+- **Acting exactly once per proposal regardless of which `CommitOutcome`
+  comes back is a deliberate scope boundary, not a gap.**
+  `'awaiting-approval'` means a human resolves this later through the
+  *separate* approval-arrives-so-call-`act()`-again flow `act()` already
+  supports (`resolveApproval.ts`); this scheduler polling it again itself
+  would be a second, redundant path to the same outcome, not a missing
+  feature. `'stale'` means the world moved since verification, and
+  `act()`'s own `CommitOutcome` doc comment already requires the caller
+  to re-propose against current state rather than retry the same
+  proposal unchanged — marking it acted-and-done is what fulfills that
+  requirement, not a shortcut around it. Retrying either case inside this
+  polling loop was considered and rejected for these reasons, not simply
+  left unbuilt.
+
 ## Resolved: the conservation family, empirically
 
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
