@@ -8,8 +8,15 @@ import type { Verifier, VerifyDecision } from './verifier.js';
  * arbitrarily — a proposal that trips two rules should say so. Written as
  * a switch narrowing on both sides rather than a numeric rank lookup, so
  * every branch is exhaustively checked by the compiler with no cast.
+ *
+ * Exported (not just used internally by `combineVerifiers` below) so
+ * `verificationState.ts`'s `foldVerdict` can fold verdicts that arrive
+ * asynchronously, one at a time, via the exact same severity rule,
+ * instead of reimplementing it — see
+ * docs/DETERMINISTIC_CORE_PATTERN.md's "Proposed: a federated
+ * choreography spine for verification".
  */
-function mergeDecisions(a: VerifyDecision, b: VerifyDecision): VerifyDecision {
+export function mergeDecisions(a: VerifyDecision, b: VerifyDecision): VerifyDecision {
   switch (a.kind) {
     case 'reject':
       return b.kind === 'reject' ? { kind: 'reject', reasons: [...a.reasons, ...b.reasons] } : a;

@@ -588,6 +588,66 @@ proven by `tests/agentic/verification/proposalLog.test.ts` and
   reaction logic was correctly deferred until `relayEffects` itself was
   proven generic first.
 
+## Resolved: VerificationState and foldVerdict
+
+The deferred piece from the section above is now built:
+`src/agentic/verification/verificationState.ts`'s `VerificationState`,
+`foldVerdict`, and `resolveVerificationState`, proven by
+`tests/agentic/verification/verificationState.test.ts` — including an
+end-to-end test running two real `VerificationWorker`s (different
+`createMaxBatchSizeVerifier` limits) through `ProposalLog` and
+`VerificationRecordStore`, then confirming `resolveVerificationState`
+folds their recorded verdicts to the *exact* decision `combineVerifiers`
+would have produced from the same two verifiers called synchronously,
+inline, on the same proposal. That equivalence — not just "it compiles
+and folds something" — is the actual claim this slice had to prove:
+folding asynchronously-arrived records has to reach the same answer
+Check already reaches today, or the whole point of decoupling Plan from
+Check would be an observable behavior change, not just a latency one.
+
+- **The original sketch was missing a field, caught by trying to
+  implement it, not by re-reading the prose.** "Proposed" above sketched
+  `pending` as `{ kind: 'pending', reportedBy: WorkerId[] }` — no running
+  decision, only who has reported. That loses information: if an early
+  worker reports `reject` and a later one reports `accept`, folding
+  `accept` in next with nothing tracking the `reject` would silently
+  downgrade the decision the moment the second verdict arrived. The
+  actual `pending` variant carries `accumulated: VerifyDecision` — the
+  most severe decision folded in so far, `{ kind: 'accept' }` before
+  anything has reported — precisely so `mergeDecisions`'s "severity only
+  accumulates" guarantee holds across time, not just within one
+  `combineVerifiers` call.
+- **Redelivery-safety from the previous slice had to be threaded through
+  here too, not just proven once and assumed to keep holding.**
+  `runVerificationWorker` can produce a second record from the same
+  worker for the same proposal after a lost cursor (proven, not just
+  claimed — see "Resolved: the first VerificationWorker" above).
+  `foldVerdict` handles this two ways, both tested directly: a worker
+  already present in `reportedBy` is never counted twice toward
+  `requiredWorkers`, so a duplicate record can't make a proposal resolve
+  before every *distinct* required worker has actually weighed in; and
+  folding an identical verdict into an already-`resolved` state is a
+  no-op, checked first, before any merge happens at all — an
+  already-terminal decision never gets recomputed, let alone changed, by
+  a redelivered duplicate arriving late.
+- **One deliberate deviation from `combineVerifiers()`'s own precedent,
+  added rather than merely inherited.** `combineVerifiers()` accepts
+  everything when given zero verifiers — a `resolveVerificationState`
+  call with zero `requiredWorkers` mirrors that (`{ kind: 'resolved',
+  decision: { kind: 'accept' } }` immediately, ignoring `records`
+  entirely). Without this guard, misconfiguring a proposal with no
+  required workers at all would leave it `pending` forever, since
+  nothing would ever call `foldVerdict` on it — a real footgun for
+  whoever wires up the first scheduler, closed here rather than left for
+  them to discover.
+- **What's still deliberately not built:** the scheduler itself — the
+  thing that actually polls `resolveVerificationState` and calls `act()`
+  the moment it returns `resolved`, the way `act()`'s own
+  `needs-human-approval` flow already expects to be called again later.
+  Nothing about `act()`/`actHuman()` needed to change for any of this,
+  exactly as "Proposed" above predicted; that prediction has now been
+  checked against two real slices, not just asserted once.
+
 ## Resolved: the conservation family, empirically
 
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
