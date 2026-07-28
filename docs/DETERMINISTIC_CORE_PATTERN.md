@@ -704,6 +704,56 @@ closes out.
   polling loop was considered and rejected for these reasons, not simply
   left unbuilt.
 
+## Resolved: a genuinely async VerificationWorker, proven non-blocking
+
+Every `VerificationWorker` built across the three slices above wraps a
+*synchronous* `Verifier` (`verifierAsWorker` around `batchSizeRule`) —
+proving the adapter direction cost nothing, but never actually
+exercising the one branch this whole design exists for:
+`VerificationWorker.verify`'s `Promise<VerifyDecision>` return type. This
+slice closes that gap. `src/agentic/verification/externalVerificationWorker.ts`'s
+`ExternalVerificationFn` and `createExternalVerificationWorker` adapt a
+genuinely slow, external call — same "no vendor SDK, no model name"
+narrowness `planning/llmPlanner.ts`'s `CompletionFn` already applies to
+the equivalent problem on the Plan side — proven by
+`tests/agentic/verification/externalVerificationWorker.test.ts`.
+
+- **The claim this design has made three times without testing it was
+  finally checked directly, with a controlled promise instead of a real
+  timer.** A `createDeferred()` helper hands the test its own `resolve`
+  function, so "the external check is still in flight" is a real,
+  observable state the test can hold open for as long as it wants — no
+  `setTimeout`, no flakiness, no slow test. While that promise is
+  deliberately left unresolved: a second proposal appends to the same
+  `ProposalLog` immediately (nothing about `append` ever had a reason to
+  block, but this is now demonstrated, not just true by inspection of
+  the type signature), and `resolveVerificationState` reports the first
+  proposal as genuinely `pending` — not a false `accept` nobody actually
+  computed. Only after the test calls `resolve` does awaiting
+  `runVerificationWorker` complete and the record land.
+- **The scheduler's behavior under a slow harness needed the same proof,
+  not an inference from the scheduler already being correct for
+  synchronous workers.** A second test runs `runScheduler` while the
+  same external check is still pending: it acts on nothing, commits
+  nothing, marks nothing acted — then, the instant the promise resolves
+  and the worker's record lands, the very next poll commits. Nothing
+  about `runScheduler` needed to change for this; it was already
+  written generically enough. The value of this test is confirming
+  that, not assuming it.
+- **What this deliberately doesn't decide: what happens when the
+  external call fails, not just when it's slow.** `ExternalVerificationFn`
+  returns `Promise<VerifyDecision>` — a rejected promise (a network
+  failure, a timeout, a malformed response) has no defined handling
+  anywhere in this chain today; it would propagate out of
+  `runVerificationWorker`'s `await` as an unhandled rejection.
+  Deciding whether that should retry, fail safe to
+  `needs-human-approval`, or something else is a real question with a
+  real answer to get right — deliberately not answered here, the same
+  "deferred until a real need, not built on guesswork" discipline this
+  document has applied consistently (see "Event bus vs. federated
+  subscription" above), rather than guessed at without a concrete
+  failure mode driving the design.
+
 ## Resolved: the conservation family, empirically
 
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
