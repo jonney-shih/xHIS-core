@@ -534,10 +534,59 @@ only decides *when* `act()` gets called; it changes nothing about how
 `VerificationWorker` — wrapping the existing `batchSizeRule` verifier
 unchanged, proving the adapter direction (sync `Verifier` → async-
 capable `VerificationWorker`) actually costs nothing — running against
-a real `ProposalLog`, with a test that kills the process mid-run and
-confirms the pending proposal is neither lost nor double-recorded on
-restart, the same proof `outboxRelayStaleCommitRace.test.ts` already
-gave the domain-choreography side of this pattern.
+a real `ProposalLog`, with a test that simulates a lost cursor and
+confirms no pending proposal is ever lost or gets a conflicting
+recorded verdict, the same proof `outboxRelayStaleCommitRace.test.ts`
+already gave the domain-choreography side of this pattern. See
+"Resolved: the first VerificationWorker, wrapping batchSizeRule" below
+for that slice, actually built.
+
+## Resolved: the first VerificationWorker, wrapping batchSizeRule
+
+The first slice above was built exactly as scoped:
+`src/agentic/verification/proposalLog.ts` (`ProposalId`,
+`ProposalEnvelope`, `ProposalLog`, `createFileProposalLog`) and
+`src/agentic/verification/verificationWorker.ts` (`VerificationWorker`,
+`VerificationRecordStore`, `verifierAsWorker`, `runVerificationWorker`),
+proven by `tests/agentic/verification/proposalLog.test.ts` and
+`tests/agentic/verification/verificationWorker.test.ts`.
+
+- **The adapter direction costs nothing, confirmed rather than assumed.**
+  `verifierAsWorker` wraps `createMaxBatchSizeVerifier` with no change to
+  its behavior — the recorded verdicts for an under-limit and an
+  over-limit proposal match exactly what `combineVerifiers` would have
+  produced synchronously (`accept` and `needs-human-approval` with the
+  identical `reasons` string), just arrived at through a durable log and
+  a cursor instead of one inline call.
+- **One correction the design section above got slightly wrong, caught
+  by writing the test rather than by re-reading the prose.** The
+  "what would turn this from proposed to resolved" paragraph originally
+  asked for a test confirming a redelivered proposal is "neither lost
+  nor double-recorded." That's not quite the actual property, and this
+  document is being corrected rather than left overstating it: a
+  redelivered proposal (simulated the same way
+  `outboxRelay.test.ts`'s "safely redelivers an already-processed
+  admission" test does — a fresh cursor pointed at the same log, as if
+  the real cursor's advance never made it to disk) *does* get a second
+  record. What redelivery actually guarantees, and what
+  `verificationWorker.test.ts`'s equivalent test proves, is that the
+  second record is never lost (it exists) and never *conflicting* (it
+  carries the identical decision) — because `Verifier.verify` is pure,
+  not because recording is deduplicated. This is the same "delivery
+  guarantee, not a success or uniqueness guarantee" `relayEffects`
+  itself already documents, just re-derived here for verdicts instead of
+  effects. `runVerificationWorker`'s own doc comment states this
+  precisely so the next reader doesn't have to rediscover it from the
+  test.
+- **`VerificationState`/`foldVerdict` — the piece that folds possibly-
+  duplicate, possibly-still-`pending` records into one `VerifyDecision`
+  — is deliberately not part of this slice.** This slice only had to
+  prove `ProposalLog` and `VerificationWorker` are sound building blocks
+  (durable, redelivery-safe, behavior-preserving for an existing
+  `Verifier`); folding records into a decision `act()` can consume is
+  real, separate work, correctly deferred the same way `patientToLab.ts`'s
+  reaction logic was correctly deferred until `relayEffects` itself was
+  proven generic first.
 
 ## Resolved: the conservation family, empirically
 
