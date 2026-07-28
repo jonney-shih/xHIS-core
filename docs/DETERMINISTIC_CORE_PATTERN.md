@@ -384,6 +384,161 @@ handle generically (differing reaction shapes) is precisely the
 dimension that shouldn't be generic, because it's where the actual
 clinical/business rules live.
 
+## Proposed: a federated choreography spine for verification, not just domain reactions
+
+Everything above generalizes *domain* choreography — one domain's
+committed effect becoming another domain's instruction, via a durable
+log, a durable cursor, and an idempotent reaction. Check (Plan →
+`combineVerifiers` → Act) has never needed that treatment, because
+every verifier written so far (`batchSizeRule.ts`, `riskTierVerifier.ts`,
+`pdpaRules.ts`) is a pure, synchronous, in-process function —
+`combineVerifiers` runs all of them inline, before Do or Act ever see
+the proposal, and that has been fine because none of them are slow.
+
+That stops being fine the moment a "verification harness" means
+calling out to something slow or non-local: an external compliance
+service, a second LLM acting as a safety reviewer, a queued
+human-review step distinct from the `needs-human-approval` approval
+flow `act()` already has. Blocking Plan's next proposal on that call —
+the only option `combineVerifiers`' synchronous contract allows today —
+would make generation throughput hostage to whatever the slowest
+plugged-in harness happens to be. This section proposes closing that
+gap the same way the domain-choreography question above was
+eventually closed: **don't call it in-process — durably log it, and
+let independent consumers react on their own schedule.** Nothing here
+is built yet; this is a design to build against, in the same spirit as
+"Event bus vs. federated subscription" above was a design to defer
+against until a real third subscriber existed.
+
+**The core move.** Plan's only synchronous obligation becomes
+appending one proposal to a new, append-only `ProposalLog` — the same
+cost class as any other commit, and the same shape as the
+`CommittedBatch` log every domain already keeps via `createFileShell`.
+Each verification harness becomes its own cursor-tracked consumer of
+that log, exactly the way `patientToLab.ts` and `patientToBed.ts` are
+each their own independent cursor-tracked consumer of
+`patientCommitsFile` today. Adding, removing, or slowing down one
+harness never touches Plan or any other harness — the identical
+"federated, no new shared coupling" property "Resolved: the third
+subscriber" above proved for domain reactions, applied one layer up to
+verification itself.
+
+**Event schema.** No new envelope is needed for the source side — it's
+the same `CommittedBatch<TCtx, TEffect>` `relay.ts` already reads. What's
+new is the proposal log, deliberately shaped the same way:
+
+```ts
+export type ProposalId = Brand<string, 'ProposalId'>;
+
+export interface ProposalEnvelope<TInstruction extends Kinded> {
+  readonly proposalId: ProposalId;
+  readonly proposal: PlanProposal<TInstruction>;
+  readonly loggedAtTick: Tick; // position in this log — not a timestamp
+}
+
+export interface ProposalLog<TInstruction extends Kinded> {
+  append(proposal: PlanProposal<TInstruction>): ProposalId;
+  readSince(fromTick: Tick): readonly ProposalEnvelope<TInstruction>[];
+}
+```
+
+`loggedAtTick` is exactly the case `Tick` (`core/temporal.ts`) was
+added for — a worker's cursor position is a logical sequence number
+into this log, never a clock read.
+
+**State transitions.** `VerifyDecision`'s "severity only accumulates"
+rule (`verifier.ts`, folded today by `combineVerifiers.ts`'s
+`mergeDecisions` — `reject` beats `needs-human-approval` beats
+`accept`, same-severity reasons merge rather than one arbitrarily
+winning) is already a state machine; it has just only ever been run
+across verdicts that all arrive in one synchronous call. The proposed
+`VerificationState` folds the identical rule across verdicts arriving
+at different times, by reusing `mergeDecisions` rather than
+reimplementing it:
+
+```ts
+export type VerificationState =
+  | { readonly kind: 'pending'; readonly reportedBy: readonly WorkerId[] }
+  | { readonly kind: 'resolved'; readonly decision: VerifyDecision };
+```
+
+A `reject` from any one worker resolves the proposal immediately,
+without waiting for the rest to report — the same latency win
+`needs-human-approval` already gets today from `mergeDecisions`'
+"severity only accumulates," realized across time instead of within
+one call.
+
+**Contract boundary interfaces.** Three interfaces, each sized like
+the existing `EffectCommitter`/`OutboxCursor` (`relay.ts`), not a new
+framework:
+
+```ts
+/** Any existing synchronous Verifier trivially satisfies this —
+ *  returning a Promise is the only thing a slow harness needs to add. */
+export interface VerificationWorker<TInstruction extends Kinded> {
+  readonly workerId: WorkerId;
+  verify(proposal: PlanProposal<TInstruction>): VerifyDecision | Promise<VerifyDecision>;
+}
+
+export interface VerificationRecordStore {
+  record(proposalId: ProposalId, workerId: WorkerId, decision: VerifyDecision, verifiedAt: IsoTimestamp): void;
+  readAllFor(proposalId: ProposalId): readonly { workerId: WorkerId; decision: VerifyDecision }[];
+}
+
+/** The verification-side counterpart to relayEffects — same shape:
+ *  cursor-tracked, redelivery-safe, one worker per cursor. */
+export function runVerificationWorker<TInstruction extends Kinded>(
+  worker: VerificationWorker<TInstruction>,
+  proposalLog: ProposalLog<TInstruction>,
+  cursor: OutboxCursor,
+  recordStore: VerificationRecordStore,
+  verifiedAt: IsoTimestamp,
+): Promise<void>; // same loop shape as relayEffects, a verdict instead of an effect
+```
+
+What's conspicuously *not* in this list: any change to `act()` or
+`actHuman()`. A scheduler calls `act()` exactly when
+`VerificationState` reaches `resolved` — that is the same "call
+`act()` again later, once an `Approval` arrives" flow `act()` already
+implements for `needs-human-approval` (`act.ts`). The new machinery
+only decides *when* `act()` gets called; it changes nothing about how
+`act()` decides once called.
+
+**Why this doesn't fight the hardening already proven this session.**
+
+- **Idempotency is free here**, unlike `reactToPatientEffect`'s
+  bed-assignment case (`patientToBed.ts`, which needs an explicit
+  existing-assignment check before selecting a bed, for exactly this
+  reason). `Verifier.verify` is already required to be pure with no
+  side effects; a worker re-verifying the same proposal after a
+  crash-and-redeliver just recomputes the same answer. No equivalent
+  guard is needed.
+- **Staleness risk goes up, but the fix already exists.** A longer
+  pending-verification window means more time for the world to move
+  between Do's dry run and Act's commit. `act()`'s
+  `commitAfterFreshCheck` — re-deriving Do against
+  `shell.readLatest()` immediately before commit, the OCC fix this
+  session already made and proved with
+  `tests/agentic/shell/actStaleCommitRace.test.ts` — already covers
+  this regardless of how long Check took to resolve. This design makes
+  that mechanism carry more weight; it needs no new one.
+- **Nothing forces migration.** Fast, synchronous verifiers can keep
+  going through `combineVerifiers` inline exactly as today. This is
+  additive infrastructure for harnesses that are actually slow, not a
+  rewrite of the ones that aren't — the same "deferred until a real
+  need, not built on guesswork" discipline "Event bus vs. federated
+  subscription" above already applied to domain choreography.
+
+**What would turn this from proposed to resolved**, mirroring
+"Resolved: the third subscriber" above: a first real
+`VerificationWorker` — wrapping the existing `batchSizeRule` verifier
+unchanged, proving the adapter direction (sync `Verifier` → async-
+capable `VerificationWorker`) actually costs nothing — running against
+a real `ProposalLog`, with a test that kills the process mid-run and
+confirms the pending proposal is neither lost nor double-recorded on
+restart, the same proof `outboxRelayStaleCommitRace.test.ts` already
+gave the domain-choreography side of this pattern.
+
 ## Resolved: the conservation family, empirically
 
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
