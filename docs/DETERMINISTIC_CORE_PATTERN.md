@@ -828,6 +828,66 @@ path.
   domain wants to plug in, the same "deferred until a real need" bar
   every other generalization in this document has had to clear.
 
+## Resolved: the cross-domain, cross-path merged audit timeline
+
+"Event bus vs. federated subscription" above named this and never built
+it: "a read-only tool that reads several domains' independent logs and
+merge-sorts them by timestamp... gets the same observability outcome
+without any domain needing to know the tool exists." `shell.ts`'s own
+doc comment raises the same question from a different angle — whether
+human- and agent-originated audit records should ever share one
+timeline. Both are now checked against a real scenario, not left as an
+abstract "still open": `src/agentic/shell/auditTimeline.ts`'s
+`AuditTimelineEntry`, `mergeAuditTimelines`, `summarizeAgentAuditRecord`,
+and `summarizeHumanAuditRecord`, proven by
+`tests/agentic/shell/auditTimeline.test.ts` against three genuinely
+separate audit files: patient's agent path (CDSS admission, approved),
+patient's human path (a direct discharge), and bed's human path (a
+direct assignment) — two domains, both paths, three files that share no
+code and know nothing of each other or of this tool.
+
+- **Purely additive and read-only, by construction, not just by
+  intent.** Nothing about `ImperativeShell`, `AuditRecord`,
+  `HumanActionAuditRecord`, or any domain's file layout changed. The
+  tool only calls `readAuditLog` (already existed) and merge-sorts the
+  result — the exact "reacting and observing are different needs and
+  should stay different mechanisms" split "Event bus vs. federated
+  subscription" already argued for, finally given the observability half
+  its argument said should exist.
+- **The merge is proven to be a real sort, not an artifact of write
+  order.** The test deliberately writes the three audit files in a
+  different order than the events actually happened in (discharge
+  written to disk before the bed assignment, even though the assignment
+  happened first) — `mergeAuditTimelines` still reconstructs the correct
+  chronological order (admitted → assigned → discharged) reading them
+  back, because it sorts by `recordedAt`, not by concatenation order.
+- **`encounterId` is deliberately not extracted generically.** The
+  doc's own phrasing offered "by timestamp (or by a shared key like
+  encounterId)" as two alternatives; `AuditTimelineEntry` carries an
+  optional `encounterId` field for a caller who wants the second, but
+  no summarizer here tries to pull it out automatically. Different
+  domains name and shape the field differently (`ledger`/`nursing` don't
+  have one at all), so a generic extractor would need a second real
+  domain's shape to check it against before it could be anything but
+  guesswork — the identical "extract once two real consumers prove the
+  shape, not before" precedent `core/temporal.ts`'s `Tick` and
+  `IsoTimestamp` already followed.
+- **`summarizeAgentAuditRecord` and `summarizeHumanAuditRecord` are two
+  functions, not one branching on shape.** Mirrors why
+  `HumanActionAuditRecord` is its own type rather than `AuditRecord`
+  reused with placeholder fields in the first place (see that type's own
+  doc comment): there was no proposal and no separate Check step for a
+  human-issued instruction, so a shared summarizer pretending otherwise
+  would misrepresent what actually happened, the same concern that kept
+  the two audit types themselves separate.
+- **Sorting is a plain string compare on `recordedAt`, never a `Date`
+  construction.** ISO-8601 UTC timestamps are fixed-width and
+  lexicographic order already is chronological order for them — reaching
+  for `Date` here would add an ambient-time-shaped API this module has
+  no actual need for, even though `auditTimeline.ts` sits outside
+  `determinism.guard.test.ts`'s guarded directories and could have used
+  one without tripping any check.
+
 ## Resolved: the conservation family, empirically
 
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
