@@ -754,6 +754,59 @@ the equivalent problem on the Plan side — proven by
   subscription" above), rather than guessed at without a concrete
   failure mode driving the design.
 
+## Resolved: the patient domain, Checked through the spine — proven equivalent, not just plumbed together
+
+Every slice above proved the spine's machinery correct in isolation —
+synthetic `createMaxBatchSizeVerifier` limits, a controlled deferred
+promise standing in for a real harness. None of them ran the actual
+production Check assembly a real domain uses. This slice does:
+`src/agentic/verification/patient.ts` gains `patientVerificationWorkers`
+— the same three verifiers `patientVerifier` already combines
+(`createRationalePiiScanVerifier`, `createMaxBatchSizeVerifier`,
+`createRiskTierVerifier`), each wrapped by `verifierAsWorker` into its
+own independent worker, instead of one direct `patientVerifier.verify`
+call. `patientVerifier` itself is unchanged — both coexist, the same
+"nothing forces migration" principle "Resolved: a genuinely async
+VerificationWorker" already established. Proven by
+`tests/agentic/planning/cdssPlanningThroughVerificationSpineEndToEnd.test.ts`,
+run against the same CDSS-sourced proposals
+`cdssPlanningEndToEnd.test.ts` already exercises through the direct
+path.
+
+- **The actual claim to prove was equivalence, not just "it runs."**
+  Decoupling Check from Plan is only safe if it reaches the *identical*
+  decision the direct, synchronous path already reaches — otherwise
+  this would be an observable behavior change disguised as a latency
+  one. Every test in this slice computes `patientVerifier.verify(proposal)`
+  inline first, then separately runs the same proposal through all
+  three `patientVerificationWorkers` plus `resolveVerificationState`,
+  and asserts the two decisions are `toEqual` each other — for an
+  outright `accept` (empty instruction list), an outright `reject`
+  (a rationale containing a PII-shaped phone number), and
+  `needs-human-approval` (a real CDSS-recommended `AdmitPatient`,
+  `review-required` per `risk/patient.ts`). All three severities, not
+  just the easy one.
+- **The approval-arrives-later boundary `scheduler.ts` already documented
+  needed to be checked against a real proposal, not just asserted as
+  fine.** `runScheduler` leaves a `needs-human-approval` proposal
+  `awaiting-approval` and marks it acted — by design, per "Resolved:
+  the scheduler." A dedicated test confirms that boundary doesn't
+  strand the proposal: `resolveApprovalForProposal` plus a direct second
+  `act()` call — the *exact* mechanism `cdssPlanningEndToEnd.test.ts`'s
+  "commits once a human approves" test already uses for the fully
+  direct path — commits it, completely unaffected by
+  `SchedulerActedStore` having already marked it acted. That store is
+  scheduler-internal bookkeeping `runScheduler` alone consults; nothing
+  about `act()` itself ever reads it.
+- **What this doesn't do: replace the direct path, or decide which one
+  a real caller should use.** `patientVerifier` is not deprecated and
+  nothing else in the codebase was changed to route through the spine
+  instead of it. This slice proves the spine is a safe, equivalent
+  *option* for the patient domain now, not that adopting it everywhere
+  is the right next move — that would need an actual slow harness this
+  domain wants to plug in, the same "deferred until a real need" bar
+  every other generalization in this document has had to clear.
+
 ## Resolved: the conservation family, empirically
 
 Every domain proven so far — `patient`, `bed`, `lab` — belongs to the
