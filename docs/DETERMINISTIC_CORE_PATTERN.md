@@ -740,19 +740,40 @@ the equivalent problem on the Plan side — proven by
   about `runScheduler` needed to change for this; it was already
   written generically enough. The value of this test is confirming
   that, not assuming it.
-- **What this deliberately doesn't decide: what happens when the
+- **What this deliberately didn't decide yet: what happens when the
   external call fails, not just when it's slow.** `ExternalVerificationFn`
   returns `Promise<VerifyDecision>` — a rejected promise (a network
-  failure, a timeout, a malformed response) has no defined handling
-  anywhere in this chain today; it would propagate out of
-  `runVerificationWorker`'s `await` as an unhandled rejection.
-  Deciding whether that should retry, fail safe to
-  `needs-human-approval`, or something else is a real question with a
-  real answer to get right — deliberately not answered here, the same
-  "deferred until a real need, not built on guesswork" discipline this
-  document has applied consistently (see "Event bus vs. federated
-  subscription" above), rather than guessed at without a concrete
-  failure mode driving the design.
+  failure, a timeout, a malformed response) had no defined handling
+  anywhere in this chain at the time this slice was written; it would
+  have propagated out of `runVerificationWorker`'s `await` as an
+  unhandled rejection. See the follow-up immediately below for how this
+  was actually resolved, once "fail safe to `needs-human-approval`" had
+  a concrete design to check against rather than being guessed at in
+  the abstract.
+
+**Follow-up: a failing `verify()` call is fail-safe, not crash-prone —
+and never blocks a later proposal behind it.** `runVerificationWorker`
+now wraps every `worker.verify` call (`verifySafely`, in
+`verificationWorker.ts`) so a thrown or rejected error folds into a
+`needs-human-approval` decision — carrying the worker's ID and the
+error message in `reasons` — instead of crashing the loop. `reject` was
+considered and rejected for this: the proposal itself was never actually
+found to be wrong, only the *check* failed to run, and `reject` would
+misrepresent that in the audit trail. The cursor still advances past the
+failing entry exactly as if it had recorded a normal verdict — the same
+move `reactToPatientEffects` already makes for `no-bed-available`/
+`reaction-failed`, and for the identical reason: holding the cursor back
+to retry automatically would leave *every later* proposal unverified by
+this worker for as long as the failure persists, which is worse than
+surfacing the failure and moving on.
+`tests/agentic/verification/verificationWorker.test.ts`'s "a failing
+`verify()` never crashes the loop or blocks a later proposal" describe
+block proves both halves directly: a rejecting worker gets a
+`needs-human-approval` record instead of crashing the run, and — mirroring
+`tests/integration/outboxRelay.test.ts`'s "advances the cursor even when
+a reaction cannot be applied, so one stuck entry does not block later
+ones" — a worker that fails on the first proposal in a batch still
+successfully verifies the second one in the same run.
 
 ## Resolved: the patient domain, Checked through the spine — proven equivalent, not just plumbed together
 
