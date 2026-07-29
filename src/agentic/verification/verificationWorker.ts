@@ -104,6 +104,22 @@ export function verifierAsWorker<TInstruction extends Kinded>(
  * folding exists; this slice proves redelivery never loses a proposal or
  * corrupts the record with a differing verdict, not that storage rows are
  * deduplicated.
+ *
+ * **A failing `verify` call — `worker.verify` throwing, or (for a
+ * `Promise`-returning worker) rejecting — never crashes this loop and
+ * never blocks any later entry behind it.** This is the same move
+ * `reactToPatientEffects` already makes for a reaction that can't be
+ * applied (`no-bed-available`, `reaction-failed`): "the cursor advances
+ * even when a reaction cannot be applied, so one stuck entry does not
+ * block later ones," because holding the cursor back to retry
+ * automatically would leave *every later* proposal unverified for as
+ * long as the failure persists — worse than surfacing it and moving on.
+ * `verifySafely` below folds any thrown/rejected error into a
+ * `needs-human-approval` decision (never a silent `accept`, and never
+ * `reject` — the proposal itself was never actually found to be wrong,
+ * the *check* failed to run) carrying the error message in `reasons`, so
+ * a human sees exactly what failed and why, and the cursor still
+ * advances past it like any other successfully recorded verdict.
  */
 export async function runVerificationWorker<TInstruction extends Kinded>(
   worker: VerificationWorker<TInstruction>,
@@ -117,7 +133,7 @@ export async function runVerificationWorker<TInstruction extends Kinded>(
 
   for (let offset = 0; offset < envelopes.length; offset += 1) {
     const envelope = envelopes[offset]!;
-    const decision = await worker.verify(envelope.proposal);
+    const decision = await verifySafely(worker, envelope.proposal);
 
     recordStore.record({
       proposalId: envelope.proposalId,
@@ -127,5 +143,19 @@ export async function runVerificationWorker<TInstruction extends Kinded>(
     });
 
     cursor.advance(startTick + offset + 1);
+  }
+}
+
+async function verifySafely<TInstruction extends Kinded>(
+  worker: VerificationWorker<TInstruction>,
+  proposal: PlanProposal<TInstruction>,
+): Promise<VerifyDecision> {
+  try {
+    return await worker.verify(proposal);
+  } catch (error) {
+    return {
+      kind: 'needs-human-approval',
+      reasons: [`'${worker.workerId}' failed to verify: ${error instanceof Error ? error.message : String(error)}`],
+    };
   }
 }
