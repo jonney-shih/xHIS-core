@@ -37,4 +37,11 @@ export const counterHandlerRegistry = {
   },
 } satisfies HandlerRegistry<CounterContext, CounterInstruction, CounterEffect, CounterError>;
 
-export const counterEngine = createEngine(counterHandlerRegistry);
+// Explicit type arguments: `createEngine` cannot infer TCtx/TInstruction/
+// TEffect/TError from a mapped-type parameter (HandlerRegistry) — inference
+// through a mapped type's generic key falls back to `unknown`/`Kinded`
+// defaults, which then fails to match the concrete registry passed in. See
+// `src/instructions/patient/engine.ts` for the same fix, applied first.
+export const counterEngine = createEngine<CounterContext, CounterInstruction, CounterEffect, CounterError>(
+  counterHandlerRegistry,
+);

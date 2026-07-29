@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCdssTriagePlanner } from '../../../src/agentic/planning/cdssPlanner.js';
-import type { TriageSignal } from '../../../src/agentic/planning/cdssPlanner.js';
+import type { CdssTriageContext, TriageSignal } from '../../../src/agentic/planning/cdssPlanner.js';
 import { planWithRetries } from '../../../src/agentic/planning/planWithRetries.js';
 import { patientInstructionValidators } from '../../../src/agentic/validation/patient.js';
 import { patientVerifier } from '../../../src/agentic/verification/patient.js';
@@ -37,7 +37,13 @@ describe('CDSS planning path, end to end', () => {
     const brokenSignal: TriageSignal = { patientId: patientId(''), encounterId: encounterId('encounter-1'), severity: 'emergent' };
     const planner = createCdssTriagePlanner();
 
-    const result = await planWithRetries(
+    // Explicit type arguments: like `createEngine` (see `patient/engine.ts`),
+    // `planWithRetries` cannot infer `TInstruction` from
+    // `patientInstructionValidators`, a mapped-type parameter
+    // (`InstructionValidatorRegistry`) — inference through a mapped type's
+    // generic key falls back to the `Kinded` constraint, not the concrete
+    // `PatientInstruction` union.
+    const result = await planWithRetries<CdssTriageContext, PatientInstruction>(
       planner,
       patientInstructionValidators,
       { description: 'triage sweep' },
@@ -56,7 +62,7 @@ describe('CDSS planning path, end to end', () => {
     const signal: TriageSignal = { patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), severity: 'emergent' };
     const planner = createCdssTriagePlanner();
 
-    const planResult = await planWithRetries(
+    const planResult = await planWithRetries<CdssTriageContext, PatientInstruction>(
       planner,
       patientInstructionValidators,
       { description: 'triage sweep' },
@@ -117,7 +123,7 @@ describe('CDSS planning path, end to end', () => {
     const signal: TriageSignal = { patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), severity: 'emergent' };
     const planner = createCdssTriagePlanner();
 
-    const planResult = await planWithRetries(
+    const planResult = await planWithRetries<CdssTriageContext, PatientInstruction>(
       planner,
       patientInstructionValidators,
       { description: 'triage sweep' },

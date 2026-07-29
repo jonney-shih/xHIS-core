@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createCdssTriagePlanner } from '../../../src/agentic/planning/cdssPlanner.js';
-import type { TriageSignal } from '../../../src/agentic/planning/cdssPlanner.js';
+import type { CdssTriageContext, TriageSignal } from '../../../src/agentic/planning/cdssPlanner.js';
 import { planWithRetries } from '../../../src/agentic/planning/planWithRetries.js';
 import { patientInstructionValidators } from '../../../src/agentic/validation/patient.js';
 import { patientVerifier } from '../../../src/agentic/verification/patient.js';
@@ -62,7 +62,9 @@ describe('mergeAuditTimelines — a real, three-source, cross-domain, cross-path
     });
 
     const signal: TriageSignal = { patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), severity: 'emergent' };
-    const planResult = await planWithRetries(
+    // Explicit type arguments: same mapped-type inference limitation
+    // `createEngine` call sites already document (see `patient/engine.ts`).
+    const planResult = await planWithRetries<CdssTriageContext, PatientInstruction>(
       createCdssTriagePlanner(),
       patientInstructionValidators,
       { description: 'triage sweep' },

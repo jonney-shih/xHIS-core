@@ -2506,3 +2506,70 @@ allocation means concretely here instead:
   exchange for GC pressure this system has no measured problem with.
   Bounding *what comes in* (the verifier above) is the safe way to
   bound allocation; reusing *what's already been allocated* is not.
+
+## Resolved: `tsconfig.json` never actually typechecked `tests/`
+
+`npm run typecheck` was `tsc --noEmit` against `tsconfig.json`, whose
+`include` has always been `["src"]` — meaning every file under `tests/`
+was compiled and executed by `vitest run` (via esbuild, which strips
+TypeScript types without verifying them) but never actually typechecked
+by anything, ever. A type error inside a test could exist indefinitely
+without ever failing CI, the pre-commit hook, or a local
+`npm run typecheck` — the "the lint rule turned a convention into
+something CI actually checks" discipline this whole document repeatedly
+applies to *runtime* behavior had a real gap on the *type-safety* side
+that nothing had checked until now.
+
+- **Confirmed by fixing it, not by inspecting the config and assuming
+  the gap was real.** A `tsconfig.typecheck.json` (`extends
+  ./tsconfig.json`, `rootDir: "."`, `noEmit: true`, `include: ["src",
+  "tests"]` — a separate file rather than widening `tsconfig.json`
+  itself, so the real `npm run build`'s exact settings, including
+  `declaration: true`'s additional emit-validity checks, stay
+  untouched) surfaced 31 genuine, previously invisible errors the
+  moment it existed. `npm run typecheck` now runs both: `tsc --noEmit`
+  (unchanged — the original exhaustiveness gate, at the original
+  settings) `&&` `tsc -p tsconfig.typecheck.json` (the new coverage) —
+  the same "chain, don't replace" reasoning `.husky/pre-commit` already
+  uses for `lint && typecheck && test`, so neither check's failure can
+  be masked by the other passing.
+- **Most of the 31 errors were the exact, already-solved,
+  already-documented problem `src/instructions/patient/engine.ts`'s own
+  comment names — just never applied where it also mattered.**
+  `createEngine`/`planWithRetries`/`createFileShell` all take a
+  mapped-type parameter (`HandlerRegistry`, `InstructionValidatorRegistry`)
+  or carry generics with no argument to infer them from at all
+  (`createFileShell(paths)`); TypeScript's inference through a mapped
+  type's generic key falls back to the bare `Kinded` constraint (or
+  `unknown`) instead of the concrete instruction union, silently
+  producing a *looser*, wrong type rather than an error at the
+  declaration site — the error only surfaces later, wherever the
+  now-too-loose value gets used somewhere stricter. `patient/engine.ts`
+  already carries a comment explaining exactly this and fixing it with
+  explicit type arguments; `tests/core/fixtures/counterEngine.ts`'s
+  `createEngine(counterHandlerRegistry)` had the identical shape and
+  the identical bug, just never checked. Every `planWithRetries(...)`
+  call feeding a CDSS-sourced proposal through Do/Check (three call
+  sites pre-existing in `cdssPlanningEndToEnd.test.ts`, two more in
+  this session's own `cdssPlanningThroughVerificationSpineEndToEnd.test.ts`
+  and `auditTimeline.test.ts`, which had copied the same, already-broken
+  pattern faithfully) had the same root cause and the same fix.
+- **One genuine test bug this caught, not just a missing type
+  annotation.** `verificationWorker.test.ts`'s "one proposal's failing
+  check does not block a later proposal" test built its intermittent
+  worker by passing an `async verify()` to `verifierAsWorker` — the
+  adapter documented and built specifically for wrapping a *synchronous*
+  `Verifier` (see "Resolved: a genuinely async VerificationWorker,
+  proven non-blocking"). It worked at runtime purely because JavaScript
+  doesn't enforce the distinction; the fix constructs a
+  `VerificationWorker` directly instead, the same way
+  `createExternalVerificationWorker` does for a real external call.
+  This is exactly the kind of misuse `npm run typecheck` running against
+  `tests/` exists to catch before it's copied into a third test as
+  established style.
+- **Nothing about runtime behavior changed.** All 428 tests passed
+  before and after every fix in this section — every error was a type
+  the test's actual runtime values already satisfied (or, for the
+  `verifierAsWorker` misuse, one JavaScript's lack of static checking
+  papered over). This was a type-safety net gap, not a correctness bug
+  in anything already shipped.
