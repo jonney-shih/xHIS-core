@@ -6,7 +6,7 @@
   "description": "xHIS-core: static execution core for the extensible Hospital Information System",
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
     "lint": "eslint .",
     "test": "vitest run",
     "benchmark": "vitest run --config vitest.benchmark.config.ts",

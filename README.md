@@ -12,7 +12,7 @@ the design and the TypeScript-specific rules that keep that guarantee real.
 ```sh
 npm install
 npm run lint        # eslint . — includes a custom rule, see below
-npm run typecheck   # tsc --noEmit — this is the exhaustiveness gate
+npm run typecheck   # tsc --noEmit (the exhaustiveness gate) + tsc -p tsconfig.typecheck.json (src + tests)
 npm test            # vitest
 npm run build       # tsc -> dist/
 ```

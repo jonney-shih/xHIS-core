@@ -10,6 +10,7 @@ import {
   verifierAsWorker,
   workerId,
 } from '../../../src/agentic/verification/verificationWorker.js';
+import type { VerificationWorker } from '../../../src/agentic/verification/verificationWorker.js';
 import { createFileOutboxCursor } from '../../../src/core/io/outboxCursor.js';
 import { isoTimestamp } from '../../../src/core/temporal.js';
 import { encounterId, patientId, isoTimestamp as patientIsoTimestamp } from '../../../src/instructions/patient/ids.js';
@@ -205,7 +206,11 @@ describe('runVerificationWorker — a failing verify() never crashes the loop or
     const healthyProposalId = log.append(proposalWithInstructionCount(2));
 
     let callCount = 0;
-    const intermittentWorker = verifierAsWorker(workerId('intermittent-external-check'), {
+    // Built directly as a VerificationWorker, not via verifierAsWorker --
+    // that adapter is for wrapping a synchronous Verifier only, and this
+    // one is deliberately async to exercise the Promise-returning branch.
+    const intermittentWorker: VerificationWorker<PatientInstruction> = {
+      workerId: workerId('intermittent-external-check'),
       async verify() {
         callCount += 1;
         if (callCount === 1) {
@@ -213,7 +218,7 @@ describe('runVerificationWorker — a failing verify() never crashes the loop or
         }
         return { kind: 'accept' };
       },
-    });
+    };
     const recordStore = createFileVerificationRecordStore(recordsFile);
     const cursor = createFileOutboxCursor(cursorFile);
 
