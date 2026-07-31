@@ -136,3 +136,41 @@ built, so they land on the correct side by construction:
   Check gate that applies to CDSS and LLM proposals today must apply to
   it too — see `AGENTIC_LAYER.md`'s "the agent never gets to skip the
   checks that apply to a human operator doing the same thing."
+
+## Follow-up: turned into a cheap, CI-checked guard, not left as a markdown-only convention
+
+`CLAUDE.md`'s guardrails had the identical shape
+`docs/DETERMINISTIC_CORE_PATTERN.md`'s "Determinism is a convention,
+backed by a cheap guard" already named: a compiler (or, here, a human
+audit) can confirm a property holds *today*, but nothing stops it from
+silently stopping being true tomorrow. `tests/architecture/hybridArchitectureBoundary.guard.test.ts`
+closes that gap the same way `determinism.guard.test.ts` already did
+for ambient time/randomness/IO: a grep-based sweep, scoped to all of
+`src/` (not a narrow subdirectory — unlike the determinism guard,
+`CLAUDE.md` states the *entire* repository is server-side, so there is
+no subdirectory a client-only, hardware, or database-specific import
+would ever be correct in), banning React imports, DOM `document.`/
+`window.` API calls, HTTP server framework imports, database driver
+imports, and hardware/peripheral SDK imports.
+
+- **Proven against a real false-positive risk before being trusted, not
+  just assumed safe.** A naive `/react/` bare-word pattern would have
+  flagged `resolveUiRenderOutcome.ts`'s own comment — "nothing under
+  `src/` references `react` at all, on purpose" — as a violation of the
+  very thing it's asserting. Every pattern instead matches an actual
+  import/require shape or a real API call shape (`document.foo`,
+  `window.foo`), and the guard was run against the real, current `src/`
+  tree first, confirming zero hits, before anything else.
+- **Proven to actually catch a real violation, the same way the
+  `no-commit-without-fresh-read` lint rule and every guard-test
+  extension in this document were proven.** A scratch file importing
+  `useState` from `react` was staged under `src/`, the guard test was
+  run and confirmed to fail with exactly that file and reason named,
+  and the scratch file was then deleted and the guard re-confirmed
+  clean — before any of this was trusted enough to commit.
+- **Deliberately as low-tech as `determinism.guard.test.ts`** — a plain
+  `readFileSync`/regex sweep, no new lint infrastructure, no new
+  dependency. This repository already has exactly one precedent for
+  "when is custom tooling worth adding" (`eslint-rules/no-commit-without-fresh-read.js`,
+  for a check regex couldn't express); a boundary-import check is not
+  that case.
