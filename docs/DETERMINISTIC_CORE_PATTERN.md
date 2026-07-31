@@ -2847,3 +2847,65 @@ hand-constructed proposals for the identical reason, not a shortcut.
   counterpart to `VitalsEntryPanel`. No CDSS exists for lab to drive
   one, so building it now would be guessing at a scenario, not proving
   one.
+
+## Resolved: pharmacy, the fourth domain — built from scratch, not just wired
+
+Patient, bed, and lab all pre-existed as domains before their own
+verification-spine/UI-contract wiring slices; pharmacy did not exist at
+all. This slice built the whole domain first — `PharmacyInstruction`
+(`PrescribeMedication`/`DispenseMedication`), its handlers and engine —
+then wired it through the identical spine and UI contract in the same
+pass, rather than treating "build the domain" and "wire the domain" as
+separate slices.
+
+- **Deliberately just two instructions, mirroring bed's restraint, not
+  lab's.** Lab grew a third instruction (`CancelLabOrder`) specifically
+  because `patientToLab.ts` needed something real to react with;
+  pharmacy has no analogous choreography need yet, so it stayed at the
+  same minimal pair patient and bed started with. Formulary/interaction
+  checking, refills, and partial dispensing are all real parts of a
+  prescription's lifecycle in a real pharmacy system, and all
+  deliberately out of scope for this first slice, the same restraint
+  applied everywhere else in this codebase.
+- **The second domain (after lab) with a genuinely two-tier risk
+  shape, proving the spine discriminates again with a different pair
+  of tiers.** `pharmacyRiskTiers` puts `PrescribeMedication` at
+  `review-required` (correctable — a wrong prescription can still be
+  caught before it's dispensed) and `DispenseMedication` at
+  `approval-required` (a dispensed medication may already be
+  administered — the same terminal-consequence reasoning
+  `ReportLabResult` and `DischargePatient` get their own top tier for).
+  `tests/agentic/verification/pharmacy.test.ts`'s spine-equivalence
+  tests check both tiers separately, the same way lab's own tests do.
+- **`EXAMPLE_pharmacyApprovalPolicy` inverts lab's role shape — real
+  evidence that role taxonomies aren't just "physician for the risky
+  tier."** Lab's top tier (`approval-required`) is `physician`-only;
+  pharmacy's is `pharmacist`-only — a pharmacist, not a physician, holds
+  the real-world authority and legal responsibility for verifying and
+  dispensing a medication. `tests/agentic/shell/pharmacyApprovalFlowEndToEnd.test.ts`
+  proves the same three-outcome shape lab's own approval-flow test
+  proved, but with the roles swapped: a physician may approve
+  `PrescribeMedication` (`review-required` allows either role) and it
+  commits; the same physician may *not* approve `DispenseMedication`
+  and nothing commits; a pharmacist approves the identical
+  `DispenseMedication` and it does commit.
+  `tests/agentic/pharmacy/pharmacyAgenticPipelineEndToEnd.test.ts` adds
+  a third role, `nurse`, holding no privilege under this domain's
+  policy at all, to prove `resolveApprovalForProposal` doesn't just
+  reject the *wrong* privileged role — it rejects an unprivileged one
+  too.
+- **`PharmacyApprovalUiComponent` tracks `prescriptionIds`, the field
+  every `PharmacyInstruction` variant actually carries** — the same
+  "pick the field every instruction kind carries" reasoning `ui/bed.ts`'s
+  `bedIds` and `ui/lab.ts`'s `orderIds` already established.
+  `DispenseMedication` carries no `encounterId` at all (only
+  `PrescribeMedication` does), but every `PharmacyInstruction` variant
+  carries `prescriptionId`.
+- **Same "no CDSS/LLM planner exists" gap bed and lab already
+  documented, and the same "no Agent-selected UI component" gap that
+  follows from it.** Pharmacy assignment/dispensing in this codebase
+  happens only through a human (`actHuman()`); its spine-equivalence
+  and approval-flow tests use hand-constructed proposals for the
+  identical reason bed's and lab's own tests do, and building a
+  `VitalsEntryPanel` counterpart now would be guessing at a scenario
+  pharmacy hasn't actually asked for.
