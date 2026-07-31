@@ -2960,3 +2960,50 @@ and wired into a real approval flow.
   scheduling, the counterpart to `VitalsEntryPanel`. No CDSS exists for
   scheduling to drive one, so building it now would be guessing at a
   scenario, not proving one.
+
+## Resolved: ledger, the sixth domain wired through the verification spine and UI contract
+
+Ledger's agentic-layer integration (`ledgerRiskTiers`,
+`ledgerInstructionValidators`, `ledgerVerifier`,
+`EXAMPLE_ledgerApprovalPolicy`) already existed. This slice closes the
+same last-mile gap bed, lab, pharmacy, and scheduling each got their
+own section for: `ledgerVerificationWorkers`
+(`agentic/verification/ledger.ts`) and `ui/ledger.ts`'s
+`ApprovalConfirmationPanel`, proven equivalent to `ledgerVerifier` and
+wired into a real approval flow.
+
+- **Back to the superset/subset role shape after scheduling's disjoint
+  one, and a genuine reason to check rather than assume it still
+  holds.** `EXAMPLE_ledgerApprovalPolicy`'s `'approval-required':
+  ['finance-controller']` is a strict subset of `'review-required':
+  ['billing-clerk', 'finance-controller']` — the same shape lab's and
+  pharmacy's policies have, unlike scheduling's disjoint
+  `'or-director'`/`'scheduling-coordinator'` split. The spine-equivalence
+  tests in `tests/agentic/verification/ledger.test.ts` still had to be
+  written and run, not assumed to pass by analogy to lab's — the point
+  scheduling's own section already made about not assuming a hierarchy
+  cuts both ways: the spine also can't be assumed to *keep* working
+  correctly once tiers go back to overlapping, only proven to.
+- **`ledgerAgenticPipelineEndToEnd.test.ts` already proved a
+  billing-clerk cannot approve `ReverseEntry`; `ledgerApprovalFlowEndToEnd.test.ts`
+  adds the half that test couldn't show on its own** — a
+  `finance-controller` actually *succeeding* at exactly the tier a
+  billing-clerk fails, plus the UI panel derivation and telemetry
+  recording every other domain's own approval-flow test already
+  exercises. Same split `schedulingApprovalFlowEndToEnd.test.ts`'s own
+  section documents for scheduling: the pipeline test proves *rejection*
+  correctly happens; the approval-flow test proves the *other* role's
+  *success* on the identical instruction, which the pipeline test's
+  own scope never needed to cover.
+- **`LedgerApprovalUiComponent` tracks `entryIds`, the field every
+  `LedgerInstruction` variant actually carries** — the same "pick the
+  field every instruction kind carries" reasoning `ui/bed.ts`'s
+  `bedIds`, `ui/lab.ts`'s `orderIds`, `ui/pharmacy.ts`'s
+  `prescriptionIds`, and `ui/scheduling.ts`'s `bookingIds` already
+  established. `lines`/`memo`/`postedAt` only exist on `PostEntry`;
+  `entryId` is the one field both variants carry.
+- **What this still doesn't do**, for the identical reason every prior
+  domain's own section states it: an Agent-selected UI component for
+  ledger, the counterpart to `VitalsEntryPanel`. No CDSS exists for
+  ledger to drive one, so building it now would be guessing at a
+  scenario, not proving one.
