@@ -2799,3 +2799,51 @@ the same way patient's was.
   actually asked for — deferred for the identical "wait for a real
   need" reason `ui/patient.ts`'s own `VitalsEntryPanel` slice was
   deferred until CDSS existed to drive it.
+
+## Resolved: lab, the third domain — and the first to prove the spine reaches the *correct* tier, not just *a* tier
+
+`labVerificationWorkers` (`agentic/verification/lab.ts`) and `ui/lab.ts`'s
+`ApprovalConfirmationPanel`, proven equivalent to `labVerifier` and
+wired into a real approval flow the same way patient's and bed's were.
+Same "no CDSS/LLM planner exists for this domain" gap bed already
+documented — lab's own spine-equivalence and approval-flow tests use
+hand-constructed proposals for the identical reason, not a shortcut.
+
+- **The first domain where `needs-human-approval` isn't one uniform
+  tier — real proof the spine discriminates, not just that it can reach
+  *some* elevated decision.** `labRiskTiers` puts `OrderLabTest`/
+  `CancelLabOrder` at `review-required` and `ReportLabResult` at its own
+  higher `approval-required` — a wrong committed result can directly
+  drive a wrong clinical decision downstream, the same terminal-
+  consequence reasoning `DischargePatient` gets its own top tier for.
+  Patient and bed each only ever produced one `needs-human-approval`
+  shape in practice; lab's spine-equivalence tests check both tiers
+  separately, confirming `resolveVerificationState` reaches the
+  `reasons` string naming the *correct* tier in each case, not merely
+  "a" `needs-human-approval`.
+- **The approval-flow test proves the risk-tier → required-role lookup
+  actually discriminates, using a real, multi-role policy for the first
+  time.** `EXAMPLE_labApprovalPolicy` allows a `lab-technologist` *or* a
+  `physician` to approve `review-required`, but only a `physician` for
+  `approval-required` — patient's and bed's own approval policies never
+  had this shape to exercise. Three tests prove all three real
+  outcomes: a lab-technologist approves an `OrderLabTest` and it
+  commits; the *same* lab-technologist attempts to approve a
+  `ReportLabResult` and `resolveApproval` correctly reports it
+  `unresolved` — not impersonation, a real identity simply missing the
+  required role for *this* tier — and nothing commits; a physician
+  approves the identical `ReportLabResult` and it does commit. Neither
+  patient's nor bed's wiring had a real role distinction available to
+  prove this against.
+- **`LabApprovalUiComponent` tracks `orderIds`, the field every
+  `LabInstruction` variant actually carries** — the same "pick the
+  field every instruction kind carries, not the one a sibling domain
+  happened to use" reasoning `ui/bed.ts`'s `bedIds` choice already
+  established. `OrderLabTest` is the only variant with an `encounterId`
+  at all; `orderId` is the one lab's three-variant instruction union
+  guarantees.
+- **What this still doesn't do**, for the identical reason bed's own
+  section states it: an Agent-selected UI component for lab, the
+  counterpart to `VitalsEntryPanel`. No CDSS exists for lab to drive
+  one, so building it now would be guessing at a scenario, not proving
+  one.
