@@ -10,6 +10,8 @@ import { createInMemoryIdentityProvider } from '../../../src/agentic/identity/in
 import { resolveApprovalForProposal } from '../../../src/agentic/identity/resolveApprovalForProposal.js';
 import { act } from '../../../src/agentic/shell/act.js';
 import { createInMemoryShell } from '../../../src/agentic/shell/inMemoryShell.js';
+import { deriveApprovalConfirmationPanel } from '../../../src/agentic/ui/patient.js';
+import { createInMemoryUiProposalTelemetryLog } from '../../../src/agentic/ui/telemetry.js';
 import { patientEngine } from '../../../src/instructions/patient/engine.js';
 import { encounterId, patientId } from '../../../src/instructions/patient/ids.js';
 import type { PatientContext, PatientEffect, PatientInstruction } from '../../../src/instructions/patient/types.js';
@@ -86,6 +88,33 @@ describe('CDSS planning path, end to end', () => {
     // regardless of how deterministic the source rule was.
     const decision = patientVerifier.verify(proposal);
     expect(decision.kind).toBe('needs-human-approval');
+    if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
+
+    // This is the real wiring point for Guardrail #2's "fixed action
+    // controls": Dr. Lin approves against this deterministically-derived
+    // panel, not a bare data blob — and the panel is derived from Check's
+    // own already-validated output, never from untrusted Agent/LLM text,
+    // so there is nothing here for a hallucination to reach.
+    const telemetryLog = createInMemoryUiProposalTelemetryLog();
+    const approvalPanel = deriveApprovalConfirmationPanel(proposal, decision);
+    telemetryLog.record({
+      component: approvalPanel.component,
+      outcome: 'rendered',
+      reasons: decision.reasons,
+      recordedAt: '2026-07-20T00:04:59.000Z',
+    });
+
+    expect(approvalPanel).toEqual({
+      component: 'ApprovalConfirmationPanel',
+      props: {
+        encounterIds: ['encounter-1'],
+        instructionSummary: ['AdmitPatient — patient-1 / encounter-1'],
+        riskReasons: ["sequence contains an instruction at risk tier 'review-required'"],
+        modelVersion: 'cdss-triage-rule-engine-v1',
+        promptVersion: 'triage-ruleset-v1',
+      },
+    });
+    expect(telemetryLog.entries).toHaveLength(1);
 
     const identityProvider = createInMemoryIdentityProvider([
       { id: 'dr-lin', displayName: 'Dr. Lin', roles: ['physician'] },

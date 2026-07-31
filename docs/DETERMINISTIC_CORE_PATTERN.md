@@ -2658,3 +2658,46 @@ alongside it.
   of any real domain" role `tests/core/fixtures/counterEngine.ts`
   already plays for `core/execution`, not a preview of real production
   UI.
+
+**Follow-up: wired into the patient domain's real approval flow — and
+the wiring turned out not to need the validation gate at all.**
+`src/agentic/ui/patient.ts`'s `ApprovalConfirmationPanel` is the first
+*real* (not illustrative) UI component this repo defines — the fixed
+panel Guardrail #2 names by example ("order confirmations") for a
+proposal Check has already marked `needs-human-approval`. Wired into
+`tests/agentic/planning/cdssPlanningEndToEnd.test.ts`'s real "commits
+once a human approves" test, immediately before
+`resolveApprovalForProposal` — Dr. Lin now approves against a
+deterministically-derived panel, not a bare data blob, with zero change
+to `act()`, `resolveApprovalForProposal`, or anything downstream.
+
+- **`deriveApprovalConfirmationPanel` deliberately bypasses
+  `toUiRenderProposal`'s validation gate — not an oversight, a genuine
+  finding about which parts of the Generative UI contract this specific
+  wiring actually needs.** Every field in
+  `ApprovalConfirmationPanelProps` is read from data Check has already
+  validated (the proposal's own instructions, `modelVersion`,
+  `promptVersion`; the decision's own `reasons`) — there is no untrusted
+  Agent output being turned into UI here, so there is nothing for
+  Guardrail #1's runtime validation layer to guard against. The
+  validation gate exists for when an *Agent* selects which component to
+  show (proven by `resolveUiRenderOutcome.test.ts`'s render/fallback
+  cases); deriving the one fixed panel a `needs-human-approval` decision
+  always gets is a different, simpler case the same contract module
+  still had to support without forcing it through machinery it doesn't
+  need.
+- **Deliberately not generalized over `TInstruction` yet.**
+  `deriveApprovalConfirmationPanel` is patient-specific — its
+  `summarizeInstruction` switch only knows `AdmitPatient`/
+  `DischargePatient` — the same "extract once a second real domain
+  needs it, not before" restraint `Tick`/`IsoTimestamp` already
+  followed. Generalizing now would mean guessing at a shape for a
+  domain (bed, lab, ...) that hasn't asked for this wiring yet.
+- **Telemetry reused as-is, not duplicated.** The same
+  `UiProposalTelemetryLog` built for Agent-selected components records
+  this harness-derived one too — `{component, outcome: 'rendered',
+  reasons, recordedAt}` is exactly the right shape for "this panel was
+  shown, and why," regardless of whether an Agent chose it or the
+  harness derived it deterministically. Inventing a parallel telemetry
+  type for the difference would have been a distinction without a
+  consequence.
