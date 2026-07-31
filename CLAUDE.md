@@ -5,7 +5,12 @@ future client-side companion project must respect. It exists so future
 code generation — by a human or an AI assistant — lands new code on the
 correct side of the boundary by default, not by review-time correction.
 See [`docs/HYBRID_ARCHITECTURE_ALIGNMENT.md`](docs/HYBRID_ARCHITECTURE_ALIGNMENT.md)
-for the audit these boundaries were checked against.
+for the audit these boundaries were checked against, and
+[`tests/architecture/hybridArchitectureBoundary.guard.test.ts`](tests/architecture/hybridArchitectureBoundary.guard.test.ts)
+for the part of this file that's a CI-checked guard, not just a
+convention — a React import, a `document.`/`window.` API call, an HTTP
+server framework, a database driver, or a hardware/peripheral SDK
+appearing anywhere under `src/` fails `npm test`.
 
 ## Where this repo sits today
 
