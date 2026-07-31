@@ -3283,3 +3283,52 @@ got.
   CDSS planner's own section states it: an Agent-selected UI component
   for pharmacy. No concrete render target has been decided, so building
   one now would be guessing at a scenario, not proving one.
+
+## Resolved: CDSS as a Plan source for a fifth domain (scheduling)
+
+`createCdssSchedulingPlanner` (`agentic/planning/cdssSchedulingPlanner.ts`)
+is the fifth real domain to get a CDSS rule implementing the untrusted
+`RawPlanner<TCtx>` contract, after patient, bed, lab, and pharmacy.
+
+- **The rule itself is deliberately close to `createCdssLabPlanner`'s —
+  and that closeness is the point, not a shortcut being papered over.**
+  `patientToScheduling.ts`'s own doc comment already states that the
+  "booking never implied by admission, discharge cancels every pending
+  one" reasoning "recurs a third time" after lab and imaging, because
+  booking creation genuinely shares lab's own "never implied by
+  admission" trait. Reusing the identical rule shape (many-to-one,
+  lookup-driven, no cross-signal contention) is the correct response to
+  a genuinely repeated domain situation, not evidence this slice skipped
+  real design work.
+- **What still had to be checked fresh, not assumed by analogy: the
+  risk tier lands at the *top*, unlike lab's.** `CancelBooking` is
+  `'approval-required'` — scheduling's own top tier, because a cancelled
+  `bookingId` can never be scheduled again (no undo at all, the same
+  terminal-consequence shape pharmacy's `DispenseMedication` earns its
+  own top tier for) — while lab's `CancelLabOrder` recommendation landed
+  at the lower `'review-required'`. This is only the *second* CDSS
+  recommendation in this codebase to land at a top tier, and the first
+  to do so for a *disjoint*, not nested, approval policy (see next
+  point) — a combination neither `createCdssPharmacyPlanner`'s proof nor
+  the original scheduling-domain wiring (PR #22) had exercised together
+  before.
+- **Scheduling's disjoint approval policy required a genuinely different
+  failure mode than pharmacy's nested one.** `cdssSchedulingPlanningEndToEnd.test.ts`
+  proves a `scheduling-coordinator` cannot approve a CDSS-recommended
+  `CancelBooking` — but not because they sit one tier too low inside a
+  shared hierarchy the way pharmacy's `physician` does at
+  `DispenseMedication`. `EXAMPLE_schedulingApprovalPolicy`'s two tiers
+  share no role at all; a `scheduling-coordinator` and an `or-director`
+  are unrelated roles, not a junior/senior pair. Only the `or-director`
+  clears it.
+- **`findPendingBookingsForEncounter` matches by convention
+  (`subjectId === encounterId`), not a real foreign key** — reused
+  unchanged from `patientToScheduling.ts`'s own choreography. A booking
+  for equipment maintenance or a staff shift never matches any
+  encounter at all, correctly; `cdssSchedulingPlanner.test.ts`'s own
+  test proves this rule never recommends cancelling one just because its
+  `subjectId` happens to look plausible.
+- **What this still doesn't do**, for the identical reason every prior
+  CDSS planner's own section states it: an Agent-selected UI component
+  for scheduling. No concrete render target has been decided, so
+  building one now would be guessing at a scenario, not proving one.
