@@ -3007,3 +3007,52 @@ wired into a real approval flow.
   ledger, the counterpart to `VitalsEntryPanel`. No CDSS exists for
   ledger to drive one, so building it now would be guessing at a
   scenario, not proving one.
+
+## Resolved: imaging, the seventh domain wired through the verification spine and UI contract
+
+Imaging's agentic-layer integration (`imagingRiskTiers`,
+`imagingInstructionValidators`, `imagingVerifier`,
+`EXAMPLE_imagingApprovalPolicy`) already existed. This slice closes the
+same last-mile gap bed, lab, pharmacy, scheduling, and ledger each got
+their own section for: `imagingVerificationWorkers`
+(`agentic/verification/imaging.ts`) and `ui/imaging.ts`'s
+`ApprovalConfirmationPanel`, proven equivalent to `imagingVerifier` and
+wired into a real approval flow.
+
+- **Four instruction kinds collapsing to a tier shape the spine had
+  already proven, not a new one.** `imagingRiskTiers` puts `OrderStudy`,
+  `RecordStudyStored`, and `CancelStudy` all at `review-required`, and
+  only `ReportStudy` at `approval-required` — still just two tiers in
+  practice, the same shape lab's and pharmacy's spines already
+  discriminate correctly. What's actually new is
+  `EXAMPLE_imagingApprovalPolicy`'s roles, not the tier count: its top
+  tier (`'radiologist'`) doesn't appear at all in its lower tier's role
+  list (`['physician', 'radiologic-technologist']`) — string-level
+  disjoint, the same shape scheduling's spine had to prove reachable,
+  even though conceptually a radiologist *is* a kind of physician. The
+  spine doesn't reason about role semantics, only literal role-string
+  membership per tier, so this is still a fresh proof, not a repeat of
+  lab's subset shape or scheduling's disjoint one by assumption.
+- **`imagingAgenticPipelineEndToEnd.test.ts` already proved a referring
+  physician cannot approve `ReportStudy`; `imagingApprovalFlowEndToEnd.test.ts`
+  adds the half that test couldn't show on its own** — a `radiologist`
+  actually *succeeding* at exactly the tier a physician fails, plus the
+  UI panel derivation and telemetry recording every other domain's own
+  approval-flow test already exercises. Same split ledger's and
+  scheduling's own sections document: the pipeline test proves
+  *rejection*; the approval-flow test proves the *other* role's
+  *success* on the identical instruction.
+- **`ImagingApprovalUiComponent` tracks `studyIds`, the field every
+  `ImagingInstruction` variant actually carries** — the same "pick the
+  field every instruction kind carries" reasoning `ui/bed.ts`'s
+  `bedIds`, `ui/lab.ts`'s `orderIds`, `ui/pharmacy.ts`'s
+  `prescriptionIds`, `ui/scheduling.ts`'s `bookingIds`, and
+  `ui/ledger.ts`'s `entryIds` already established. `encounterId`/
+  `modality` only exist on `OrderStudy`, `storageRef` only on
+  `RecordStudyStored`; `studyId` is the one field all four variants
+  carry.
+- **What this still doesn't do**, for the identical reason every prior
+  domain's own section states it: an Agent-selected UI component for
+  imaging, the counterpart to `VitalsEntryPanel`. No CDSS exists for
+  imaging to drive one, so building it now would be guessing at a
+  scenario, not proving one.
