@@ -2573,3 +2573,88 @@ that nothing had checked until now.
   `verifierAsWorker` misuse, one JavaScript's lack of static checking
   papered over). This was a type-safety net gap, not a correctness bug
   in anything already shipped.
+
+## Resolved: Generative UI as a third instance of the same containment pattern
+
+This document's own thesis (see "The thesis" at the top) is that a
+deterministic foundation layer's job is making an LLM's hallucination
+and non-deterministic output *structurally incapable of reaching
+committed, consequential state* — and that different domains can have
+completely different "hard cores" (state/time-precision, conservation,
+feasibility) while still being instances of the same pattern. Generative
+UI turns out to be a fourth "hard core," not previously named: **render
+safety** — an Agent's output must be structurally incapable of reaching
+a clinician's screen as free-form, unvalidated HTML/JSX. The user
+supplied three guardrails for this (component registry, runtime
+validation, deterministic action UI, strict Agent/Design-System
+separation); `src/agentic/ui/` is the first slice proving they compose
+with everything already built here, not a new architecture invented
+alongside it.
+
+- **The same three-step pipeline, minus the two steps that don't
+  apply.** Step 1 (closed, compiler-provable union) is `UiKinded` +
+  `UiComponentDescriptor`-shaped unions, exhaustively checked exactly
+  like `Kinded` + `PatientInstruction` — see
+  `tests/agentic/ui/fixtures/__typetests__/exhaustiveness.ts`, proven to
+  actually fail without its `@ts-expect-error` before being trusted, the
+  same way `patient/handlers/__typetests__/exhaustiveness.ts` already
+  does. Step 2 (hard validation boundary between untrusted output and a
+  typed object) is `toUiRenderProposal`/`validateComponent`, mirroring
+  `toPlanProposal`/`validateInstruction` exactly. Step 3
+  (domain-specific invariant proof) and the whole Do/Check/Act pipeline
+  do not apply at all, for a reason worth stating precisely: Do exists
+  to dry-run instructions against a real domain engine and inspect the
+  effects; there is no engine for "render a panel," nothing to
+  transition, nothing to dry-run. This is a genuine two-step pipeline
+  (Plan → validate-or-fallback), not Do/Check/Act with steps quietly
+  skipped.
+- **`UiRenderProposal.component` is singular, not an array — a real
+  divergence from `PlanProposal`, not an oversight.**
+  `PlanProposal.instructions` batches because instructions are a
+  *sequence of state transitions* needing all-or-nothing atomicity
+  (`executeSequence`'s batch contract). A UI descriptor has no such
+  causality — no "render panel A, then panel B" ordering, nothing to
+  roll back — so `proposal.ts` keeps `component` singular rather than
+  importing a concern this shape never had.
+- **The static fallback panel is deliberately kept out of the Agent's
+  own vocabulary, not made a member of `TComponent`.** Guardrail #1's
+  "if validation fails, trigger a graceful fallback to a standard
+  static UI" could have been modeled as a variant inside the closed
+  union. It isn't: `resolveUiRenderOutcome` resolves only to `{kind:
+  'render', component}` or `{kind: 'fallback', reasons}` — a typed
+  decision, never a specific fallback component — and the caller
+  supplies its own fixed panel for the `fallback` case, the same way
+  `llmPlanner.ts`'s `CompletionFn` leaves the actual vendor call to its
+  caller rather than deciding it centrally. Putting the fallback inside
+  the Agent-selectable vocabulary would blur exactly the line Guardrail
+  #3 draws — "what to show" (Agent) versus "what happens when the
+  contract is violated" (harness) are different questions, and this
+  codebase already treats that shape of separation as load-bearing
+  (`ExecutionContext` staying plain data, no injected `Clock`).
+- **Telemetry, not audit.** `UiProposalTelemetryEntry` is deliberately
+  not `AuditRecord` reused with placeholder fields — the same "a
+  different concern gets a different shape" reasoning
+  `HumanActionAuditRecord`'s own doc comment already applies to the
+  human-initiated path, here applied to "nothing commits state, so
+  nothing needs a non-repudiable record" instead of "nothing has a
+  proposal or a Check step." In-memory only, on purpose: this is a local
+  debug aid, not a durable compliance store, and building durability in
+  now would be solving a problem nobody has yet.
+- **What this repo does not own.** `resolveUiRenderOutcome` returns a
+  typed decision and never touches an actual render call — nothing
+  under `src/` references `react` at all. Guardrail #3's "Design
+  System's Role... 100% governed by our audited TypeScript Design
+  System" names a system this repo doesn't own; the closed
+  `UiComponentDescriptor` union is the shared contract both sides must
+  honor, but the actual `component` → rendered-element mapping belongs
+  to whichever codebase owns that Design System, not to xHIS-core.
+  Building that mapping here would have been scope creep past what
+  Guardrail #3 actually assigns this repo.
+- **The illustrative example lives in `tests/`, not `src/`, for the
+  identical reason.** This repo owns the generic contract
+  (`UiKinded`, `UiRenderProposal`, `ComponentPropsValidatorRegistry`,
+  ...), not any real clinical component catalog — `tests/agentic/ui/fixtures/exampleComponents.ts`
+  plays the same "prove the generic mechanism in isolation, independent
+  of any real domain" role `tests/core/fixtures/counterEngine.ts`
+  already plays for `core/execution`, not a preview of real production
+  UI.
