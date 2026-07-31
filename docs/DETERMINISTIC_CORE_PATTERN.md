@@ -2748,3 +2748,54 @@ JSON would.
   specific planner's input shape for no reason — a second planner
   proposing the same panel from different input wouldn't need to touch
   `ui/patient.ts` at all under this split.
+
+## Resolved: bed, the second domain wired through both the verification spine and the UI contract
+
+Both "the patient domain, Checked through the spine" and every
+harness-derived UI section above ended with the same note: generalizing
+past patient would need a second real domain to prove the shape
+against, not guesswork. Bed is that second domain — `bedVerificationWorkers`
+(`agentic/verification/bed.ts`) and `ui/bed.ts`'s `ApprovalConfirmationPanel`,
+proven equivalent to `bedVerifier` and wired into a real approval flow
+the same way patient's was.
+
+- **The one thing genuinely different, found by trying to build it, not
+  guessed at in advance: there is no CDSS/LLM planner for bed.** Every
+  patient-domain proof above sourced its proposal from
+  `createCdssTriagePlanner()`; bed has no equivalent — bed assignment
+  in this codebase happens either directly through a human
+  (`actHuman()`) or via choreography (`patientToBed.ts`'s reaction to a
+  patient effect), never through an Agent proposing a `BedInstruction`
+  sequence. `tests/agentic/verification/bed.test.ts`'s spine-equivalence
+  tests and `tests/agentic/shell/bedApprovalFlowEndToEnd.test.ts` both
+  use hand-constructed proposals instead — not a shortcut taken to
+  avoid building a planner, but an accurate reflection of what a real
+  caller actually has: `bedVerifier`'s own pre-existing tests already
+  used the identical hand-built-proposal style, for the identical
+  reason.
+- **`BedApprovalUiComponent` tracks `bedIds`, not `encounterIds` — the
+  one field choice that couldn't be copied mechanically from patient's
+  panel.** `ReleaseBed` deliberately carries no `encounterId` at all
+  (see `BedInstruction`'s own doc comment: the bed being released
+  already has one on record, and re-asking for it would just be a
+  second, possibly stale copy) — `bedId` is the one field both
+  `AssignBed` and `ReleaseBed` always carry, so it's the correct
+  "primary identifier" for this domain's panel, not patient's field
+  name relabeled.
+- **The spine-equivalence proof itself needed no new machinery** —
+  `bedVerificationWorkers` is the same `verifierAsWorker` adapter over
+  the same three verifiers `bedVerifier` already combines, run through
+  the same `ProposalLog`/`runVerificationWorker`/`resolveVerificationState`
+  pipeline patient's proof used, checked against all three of
+  `bedVerifier`'s real decision shapes (accept, reject on a leaked
+  national ID, needs-human-approval) rather than just the one
+  needs-human-approval case every `BedInstruction` risk tier happens to
+  produce today.
+- **What this still doesn't do: an Agent-selected UI component for
+  bed**, the counterpart to patient's `VitalsEntryPanel`. That slice
+  proved the validation-gate half of the contract against a real CDSS
+  suggestion; bed has no CDSS to suggest anything, so building an
+  equivalent now would mean inventing a scenario this domain hasn't
+  actually asked for — deferred for the identical "wait for a real
+  need" reason `ui/patient.ts`'s own `VitalsEntryPanel` slice was
+  deferred until CDSS existed to drive it.
