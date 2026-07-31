@@ -1,4 +1,6 @@
+import { err, ok, type Result } from '../../core/execution/result.js';
 import type { UiKinded } from './component.js';
+import type { ComponentPropsValidatorRegistry } from './validator.js';
 import type { PlanProposal } from '../planning/proposal.js';
 import type { VerifyDecision } from '../verification/verifier.js';
 import type { PatientInstruction } from '../../instructions/patient/types.js';
@@ -75,3 +77,63 @@ export function deriveApprovalConfirmationPanel(
     },
   };
 }
+
+export interface VitalsEntryPanelProps {
+  readonly encounterId: string;
+  readonly patientId: string;
+}
+
+/**
+ * The patient domain's first genuinely *Agent-selected* UI component —
+ * Guardrail #2's own "vital sign entries" example. Deliberately a
+ * separate type from `PatientApprovalUiComponent`, not one union
+ * covering both: `ApprovalConfirmationPanel` is harness-derived and
+ * never runs through `toUiRenderProposal`'s validation gate (see
+ * `deriveApprovalConfirmationPanel`'s own doc comment); `VitalsEntryPanel`
+ * is proposed by an Agent (see `planning/cdssPlanner.ts`'s
+ * `suggestVitalsEntryPanel`) and always must. Forcing both into one
+ * closed union would demand a validator for a component that never
+ * actually gets validated in practice — dead code standing in for a
+ * guarantee that was never true — the same "a different concern gets a
+ * different shape" reasoning that already keeps `AuditRecord` and
+ * `HumanActionAuditRecord` separate.
+ */
+export type PatientVitalsUiComponent = {
+  readonly component: 'VitalsEntryPanel';
+  readonly props: VitalsEntryPanelProps;
+};
+
+type _AssertVitalsUiKinded = PatientVitalsUiComponent extends UiKinded ? true : never;
+void (0 as unknown as _AssertVitalsUiKinded);
+
+function validateVitalsEntryPanel(candidate: unknown): Result<PatientVitalsUiComponent, readonly string[]> {
+  const c = candidate as Record<string, unknown>;
+  const props = c['props'] as Record<string, unknown> | undefined;
+  const issues: string[] = [];
+
+  if (typeof props?.['encounterId'] !== 'string' || props['encounterId'].length === 0) {
+    issues.push("'props.encounterId' must be a non-empty string");
+  }
+  if (typeof props?.['patientId'] !== 'string' || props['patientId'].length === 0) {
+    issues.push("'props.patientId' must be a non-empty string");
+  }
+
+  if (issues.length > 0) {
+    return err(issues);
+  }
+
+  return ok({
+    component: 'VitalsEntryPanel',
+    props: { encounterId: props!['encounterId'] as string, patientId: props!['patientId'] as string },
+  });
+}
+
+/**
+ * Assembled as a single object literal checked with `satisfies` — same
+ * total-registry proof `exampleComponentPropsValidators` demonstrates
+ * for the illustrative fixture, here for the patient domain's first
+ * real Agent-selected component.
+ */
+export const patientVitalsComponentPropsValidators = {
+  VitalsEntryPanel: validateVitalsEntryPanel,
+} satisfies ComponentPropsValidatorRegistry<PatientVitalsUiComponent>;

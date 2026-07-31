@@ -2701,3 +2701,50 @@ to `act()`, `resolveApprovalForProposal`, or anything downstream.
   harness derived it deterministically. Inventing a parallel telemetry
   type for the difference would have been a distinction without a
   consequence.
+
+**Follow-up: the *other* half of the contract — genuinely Agent-selected
+UI — proven against a real consumer too, not just the illustrative
+fixture.** The wiring above deliberately bypassed
+`toUiRenderProposal`'s validation gate, because nothing untrusted was
+involved. `planning/cdssPlanner.ts`'s new `suggestVitalsEntryPanel`
+closes the matching gap on the other side: Guardrail #2's own "vital
+sign entries" example, genuinely proposed by CDSS (the same rule engine
+that already proposes `AdmitPatient`), run through
+`resolveUiRenderOutcome` for real in
+`tests/agentic/planning/cdssPlanningEndToEnd.test.ts` — both outcomes,
+not just the happy path: a well-formed suggestion renders, and the same
+shape missing `patientId` falls back, exactly like an LLM's malformed
+JSON would.
+
+- **`PatientVitalsUiComponent` is deliberately a separate type from
+  `PatientApprovalUiComponent`, not one union covering both.** Forcing
+  them together would force a `ComponentPropsValidatorRegistry` to
+  demand a validator for `ApprovalConfirmationPanel` — a component that
+  structurally never reaches `toUiRenderProposal` in practice, since it
+  is always harness-derived. That validator would be dead code
+  standing in for a guarantee ("this can be validated as untrusted
+  input") that was never actually true for that component. Same "a
+  different concern gets a different shape" reasoning that already
+  keeps `AuditRecord` and `HumanActionAuditRecord` separate, applied
+  here to two components instead of two audit-record shapes.
+- **Being deterministic still doesn't earn an exemption — proven for UI
+  the same way it was already proven for instructions.**
+  `cdssPlanningEndToEnd.test.ts`'s very first test in this file proved
+  "CDSS is not exempt from risk-tiered human approval... regardless of
+  how deterministic the source rule was" for instructions.
+  `suggestVitalsEntryPanel`'s own doc comment states the identical claim
+  for UI, and the new fallback test is what actually checks it: a
+  deterministic rule producing an incomplete candidate gets the exact
+  same fallback an LLM hallucinating a missing field would get — nothing
+  about the source being a rule engine, not a model, buys it a shortcut
+  around Guardrail #1's validation layer.
+- **`ui/patient.ts` still doesn't know `TriageSignal` exists.**
+  `suggestVitalsEntryPanel` lives in `cdssPlanner.ts`, not in
+  `ui/patient.ts` — the same split `plan`'s own instruction-suggestion
+  rule already draws: `ui/patient.ts` owns the patient domain's closed
+  UI contract (types, validators), CDSS owns *its own* rule for what to
+  suggest against that contract. Putting the suggestion rule in
+  `ui/patient.ts` would have coupled the generic contract to one
+  specific planner's input shape for no reason — a second planner
+  proposing the same panel from different input wouldn't need to touch
+  `ui/patient.ts` at all under this split.
