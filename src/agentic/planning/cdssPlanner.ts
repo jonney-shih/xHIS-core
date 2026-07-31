@@ -1,6 +1,7 @@
 import { ok, type Result } from '../../core/execution/result.js';
 import type { EncounterId, PatientId } from '../../instructions/patient/ids.js';
 import type { PatientContext } from '../../instructions/patient/types.js';
+import type { RawUiRenderOutput } from '../ui/toUiRenderProposal.js';
 import type { PlanningGoal } from './proposal.js';
 import type { RawPlanner, RawPlanOutput } from './toPlanProposal.js';
 
@@ -85,5 +86,33 @@ export function createCdssTriagePlanner(): RawPlanner<CdssTriageContext> {
         promptVersion: 'triage-ruleset-v1',
       });
     },
+  };
+}
+
+/**
+ * CDSS's own UI-suggestion rule — the counterpart to `plan`'s
+ * instruction-suggestion rule above, applied to Guardrail #2's own
+ * "vital sign entries" example instead of an admission instruction.
+ * Deliberately its own function, not folded into `plan`: a
+ * `UiRenderProposal` is a separate Plan-source output from a
+ * `PlanProposal` (see `ui/proposal.ts`'s own doc comment on why they
+ * stay parallel rather than combined — Option A over Option B, in the
+ * design discussion this slice was built from), so there is no single
+ * `RawPlanOutput` shape for this to live inside.
+ *
+ * Returns the *raw*, still-untrusted shape `toUiRenderProposal` expects
+ * — same "CDSS is not exempt from risk-tiered human approval... regardless
+ * of how deterministic the source rule was" principle this file's own
+ * `plan` already proved for instructions, now proved for UI: being a
+ * deterministic rule doesn't exempt this output from the same
+ * validation gate an LLM's raw JSON would have to pass through
+ * `toUiRenderProposal`/`resolveUiRenderOutcome`.
+ */
+export function suggestVitalsEntryPanel(signal: TriageSignal): RawUiRenderOutput {
+  return {
+    component: { component: 'VitalsEntryPanel', props: { encounterId: signal.encounterId, patientId: signal.patientId } },
+    rationale: 'CDSS triage rule: suggesting vitals entry for a newly recommended admission',
+    modelVersion: 'cdss-triage-rule-engine-v1',
+    promptVersion: 'triage-ruleset-v1',
   };
 }
