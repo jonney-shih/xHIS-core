@@ -3111,3 +3111,61 @@ both the verification spine and the Generative UI contract.
   scenario, not proving one. Unlike every prior domain's section, this
   gap is now uniform across all eight domains — only `patient` has one,
   because only `patient` has a CDSS to drive it.
+
+## Resolved: CDSS as a Plan source for a second domain (bed)
+
+"Resolved: CDSS as a Plan source" above proved the pattern once, for
+patient's `createCdssTriagePlanner`. `createCdssBedPlanner`
+(`agentic/planning/cdssBedPlanner.ts`) is the second real domain to get
+one — implementing the identical untrusted `RawPlanner<TCtx>` contract,
+with zero pipeline code changed, proven through the same three-layer
+test structure patient's own CDSS slice used
+(`cdssBedPlanner.test.ts`'s unit tests, `cdssBedPlanningEndToEnd.test.ts`'s
+Do/Check/Approve/Act proof, `cdssBedPlanningThroughVerificationSpineEndToEnd.test.ts`'s
+spine proof).
+
+- **Bed already has an existing, unrelated automatic path for the exact
+  same real-world event — building this anyway is not redundancy, it's
+  the point.** `patientToBed.ts`'s `EncounterAdmitted` choreography
+  already assigns a bed the moment a patient is admitted, immediately
+  and with no Check/Approve gate at all. `createCdssBedPlanner` produces
+  the identical `AssignBed` instruction shape from a structurally
+  similar signal, but routes it through the full Agent-Checked,
+  human-approved pipeline instead. Nothing about Plan/Check/Approve/Act
+  existing for a domain forces every real caller through it — `actHuman()`
+  and choreography already proved that by coexisting for bed before
+  this planner existed; this is a third coexisting path for the same
+  domain, not a replacement for either of the first two.
+- **The one genuinely new wrinkle patient's triage planner never had to
+  handle: a shared, exhaustible resource across signals in the same
+  proposal.** Patient's admission target space never runs out — every
+  `emergent` signal can independently get its own `AdmitPatient`
+  recommendation. Bed availability can: two signals in the same
+  proposal both wanting a bed, with only one actually available, is a
+  real scenario, not a theoretical one, and processing signals against
+  an unthreaded snapshot of `BedContext` would let both be recommended
+  the *same* `bedId` — a double-booking bug `bedEngine.executeSequence`
+  would only catch later, as a `BedAlreadyOccupied` failure on the
+  second instruction, after the planner had already claimed success on
+  both. `createCdssBedPlanner` instead threads a local, hypothetical
+  `BedContext` forward across signals — updated after each accepted
+  recommendation, never touching the real `context.bedContext` the
+  caller passed in, and never itself committing anything.
+  `cdssBedPlanner.test.ts`'s "never recommends the same bed to two
+  different signals in the same proposal" test is the direct proof.
+- **Reuses `BedSelectionStrategy` and `findBedHoldingEncounter` rather
+  than reimplementing either.** Both already existed for
+  `patientToBed.ts`'s choreography reaction; this planner takes the
+  identical selection policy as an explicit input (the same reason
+  `reactToPatientEffect` takes one as a parameter rather than importing
+  `EXAMPLE_firstAvailableBedStrategy` directly) and the identical
+  data-integrity-aware lookup, rather than growing a second, possibly
+  divergent implementation of either.
+- **What this deliberately doesn't do: an Agent-selected UI component
+  for bed** (`suggestVitalsEntryPanel`'s counterpart). Patient's own
+  `VitalsEntryPanel` suggestion rule was itself a separate, later slice
+  built only once a real CDSS existed to drive it — not bundled with
+  `createCdssTriagePlanner` itself. This slice follows the identical
+  ordering: the planner is what was asked for and proven here; a UI
+  suggestion built now, unasked and with no concrete render target
+  decided, would be guessing at a scenario rather than proving one.
