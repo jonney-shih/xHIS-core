@@ -3169,3 +3169,61 @@ spine proof).
   ordering: the planner is what was asked for and proven here; a UI
   suggestion built now, unasked and with no concrete render target
   decided, would be guessing at a scenario rather than proving one.
+
+## Resolved: CDSS as a Plan source for a third domain (lab)
+
+`createCdssLabPlanner` (`agentic/planning/cdssLabPlanner.ts`) is the
+third real domain to get a CDSS rule implementing the untrusted
+`RawPlanner<TCtx>` contract, after patient's `createCdssTriagePlanner`
+and bed's `createCdssBedPlanner` — proven through the identical
+three-layer test structure both of those got. Like bed's, it's a third
+path to an instruction shape (`CancelLabOrder`) `patientToLab.ts`'s own
+choreography can already produce immediately with no Check/Approve
+gate — see `createCdssBedPlanner`'s own doc comment for why that's not
+redundant, unchanged here.
+
+- **The two real differences from `createCdssBedPlanner` were both
+  already predicted by `patientToLab.ts`'s own doc comment, written
+  before this planner existed, contrasting lab's choreography with
+  bed's.** That file states plainly: bed's reaction "picks *one* bed via
+  a `BedSelectionStrategy`, but lab has no equivalent selection policy at
+  all." This planner inherits exactly that contrast one layer up: it
+  needs no cross-signal resource-contention handling at all (no
+  hypothetical-context-threading the way `createCdssBedPlanner` needs,
+  because cancelling one encounter's pending orders never contends with
+  another's), and one signal can map to *zero, one, or many*
+  `CancelLabOrder` instructions — the same "zero, one, or many, no
+  'which one' decision" shape `patientToLab.ts`'s own `PatientLabReaction`
+  already has for the identical real-world trigger.
+  `cdssLabPlanner.test.ts`'s "recommends cancellation of every pending
+  order for a single discharge signal" test is the many-to-one proof;
+  its "handles multiple independent discharge signals without any
+  cross-signal interaction" test is the no-contention proof, phrased as
+  the direct contrast to `createCdssBedPlanner`'s own
+  no-double-booking test.
+- **No signal field ever taints the output instruction here, unlike
+  bed's — a real, not cosmetic, difference in what "broken input" even
+  means for this rule.** `AssignBed` copies `signal.encounterId`
+  straight into the output instruction, so a malformed signal directly
+  produces an invalid one; `CancelLabOrder` carries no `encounterId` at
+  all (see `LabInstruction`'s own shape), so the discharge signal's
+  `encounterId` is consumed only by the lookup and never appears in what
+  gets proposed. `cdssLabPlanningEndToEnd.test.ts`'s own
+  retry-determinism test had to find a different unchanging bad input to
+  prove the same "a deterministic rule can't recover via feedback"
+  claim `createCdssTriagePlanner`'s and `createCdssBedPlanner`'s own
+  tests already proved with a malformed signal — here it's a malformed
+  `proposedAt`, the one value the rule's output does carry through
+  unvalidated on every attempt.
+- **Rejecting a triage-shaped signal for lab ("this admission implies
+  these orders") was a deliberate design choice, not an oversight.**
+  `cdssLabPlanner.ts`'s own doc comment states why: that shape would
+  require inventing which test to order, exactly the clinical judgment
+  `patientToLab.ts`'s own choreography already refuses to have an
+  opinion about (`EncounterAdmitted` triggers no lab reaction there
+  either). A discharge-shaped signal needs no such invention —
+  cancellation is a pure lookup, not a clinical decision.
+- **What this still doesn't do**, for the identical reason bed's own
+  section states it: an Agent-selected UI component for lab. No
+  concrete render target has been decided for lab, so building one now
+  would be guessing at a scenario, not proving one.
