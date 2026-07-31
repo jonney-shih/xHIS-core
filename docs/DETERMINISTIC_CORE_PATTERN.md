@@ -3227,3 +3227,59 @@ redundant, unchanged here.
   section states it: an Agent-selected UI component for lab. No
   concrete render target has been decided for lab, so building one now
   would be guessing at a scenario, not proving one.
+
+## Resolved: CDSS as a Plan source for a fourth domain (pharmacy)
+
+`createCdssPharmacyPlanner` (`agentic/planning/cdssPharmacyPlanner.ts`)
+is the fourth real domain to get a CDSS rule implementing the untrusted
+`RawPlanner<TCtx>` contract, after patient's `createCdssTriagePlanner`,
+bed's `createCdssBedPlanner`, and lab's `createCdssLabPlanner` — proven
+through the identical three-layer test structure all three of those
+got.
+
+- **Unlike bed and lab, pharmacy has no existing choreography reaction
+  at all.** There is no `patientToPharmacy.ts` the way there's a
+  `patientToBed.ts`/`patientToLab.ts` — pharmacy was built from scratch
+  in this codebase with no discharge- or admission-triggered automation
+  ever wired to it. So this planner is pharmacy's *first* automated path
+  to any instruction, not a third one coexisting alongside an immediate,
+  unapproved reaction the way `createCdssBedPlanner`'s and
+  `createCdssLabPlanner`'s own doc comments describe for theirs.
+- **The genuinely new proof this planner adds: CDSS is not exempt from
+  risk-tiered approval even at the *highest*-stakes tier, not just the
+  lower one every prior CDSS recommendation happened to land on.**
+  `AdmitPatient`, `AssignBed`, and `CancelLabOrder` are all
+  `'review-required'`; `DispenseMedication` is pharmacy's own top tier,
+  `'approval-required'`, `pharmacist`-only. Until this planner, the
+  "CDSS is not exempt from risk-tiered human approval... regardless of
+  how deterministic the source rule was" claim this document makes had
+  only ever been checked against the lower tier.
+  `cdssPharmacyPlanningEndToEnd.test.ts`'s main test proves the harder
+  case directly: a physician — permitted at pharmacy's own
+  `review-required` tier — still cannot approve a CDSS-recommended
+  dispense; only a pharmacist can.
+- **A `prescriptionId` signaled twice in one batch is recommended at
+  most once, for a different reason than `createCdssBedPlanner`'s
+  duplicate-bed guard.** Bed's planner threads state forward because bed
+  availability is a *shared, contended* resource across signals;
+  pharmacy's has no such resource at all — the actual risk here is that
+  two `DispenseMedication` instructions for the identical
+  `prescriptionId` in one proposal would doom the *whole* batch at Do
+  time (`executeSequence`'s all-or-nothing contract means the second
+  instruction finding the first one's effect already applied and
+  failing would reject even the valid first one). Two structurally
+  different problems, arrived at from two different domains' own
+  instruction semantics, both requiring the same shape of fix — not
+  evidence the fix generalizes automatically, evidence it has to be
+  re-derived and re-checked for each domain's own reason.
+- **Signal design deliberately mirrors the target, not the trigger.**
+  Bed's and lab's signals both name an *encounter*, because their rules
+  each still have work to do (select a bed; look up pending orders).
+  Pharmacy's signal names the *prescription* directly — there is nothing
+  left to select or look up once dispensing is what's being
+  recommended, so naming anything but the specific target
+  (`prescriptionId`) would just be indirection with no purpose.
+- **What this still doesn't do**, for the identical reason every prior
+  CDSS planner's own section states it: an Agent-selected UI component
+  for pharmacy. No concrete render target has been decided, so building
+  one now would be guessing at a scenario, not proving one.
