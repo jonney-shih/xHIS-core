@@ -3056,3 +3056,58 @@ wired into a real approval flow.
   imaging, the counterpart to `VitalsEntryPanel`. No CDSS exists for
   imaging to drive one, so building it now would be guessing at a
   scenario, not proving one.
+
+## Resolved: nursing, the eighth and last domain wired through the verification spine and UI contract
+
+Nursing's agentic-layer integration (`nursingRiskTiers`,
+`nursingInstructionValidators`, `nursingVerifier`,
+`EXAMPLE_nursingApprovalPolicy`) already existed. This slice closes the
+same last-mile gap every other domain got its own section for:
+`nursingVerificationWorkers` (`agentic/verification/nursing.ts`) and
+`ui/nursing.ts`'s `ApprovalConfirmationPanel`, proven equivalent to
+`nursingVerifier` and wired into a real approval flow. **This is the
+last domain** — every domain in this codebase (patient, bed, lab,
+pharmacy, scheduling, ledger, imaging, nursing) is now routed through
+both the verification spine and the Generative UI contract.
+
+- **`GrantRole`'s `'approval-required'` tier is the highest-stakes top
+  tier of any domain, and the spine had to reach it correctly anyway.**
+  `risk/nursing.ts`'s own doc comment already establishes why: nursing's
+  own committed state is what a real `IdentityProvider` derives every
+  *other* domain's approval authority from, so a wrongful `GrantRole`
+  isn't scoped to nursing — it's systemic. `nursingVerificationWorkers`'
+  spine-equivalence tests prove the spine discriminates this tier from
+  `IssueCredential`/`RevokeCredential`'s `review-required` correctly,
+  the same proof obligation every prior domain's top tier already
+  passed, just with the largest blast radius if it had failed silently.
+- **`NursingApprovalUiComponent` tracks `credentialIds` — but this is
+  the first domain where that field isn't uniformly a record's own
+  identifier.** `IssueCredential`/`RevokeCredential` carry `credentialId`
+  as their own primary key, matching every prior domain's panel field
+  choice (`bedIds`, `orderIds`, `prescriptionIds`, `bookingIds`,
+  `entryIds`, `studyIds`); `GrantRole`'s own identifier is `grantId` —
+  it carries `credentialId` only as a foreign key to the credential
+  backing the grant. The panel still uses it, because the actual
+  criterion has always been "the field every instruction kind carries,"
+  not "the subject's own primary key" specifically — this domain is
+  just the first where those two descriptions diverge.
+- **`nursingApprovalFlowEndToEnd.test.ts` deliberately uses the same
+  plain `createInMemoryIdentityProvider` every other domain's
+  approval-flow test uses, not `createNursingIdentityProvider`.**
+  `nursingAgenticPipelineEndToEnd.test.ts`'s own `GrantRole` test already
+  proved something no other domain could — that a `GrantRole` approval
+  can be resolved against nursing's *own* committed state rather than a
+  hand-maintained list, closing the loop `nursingIdentityProvider.ts`'s
+  doc comment describes. This file's job is different: proving the
+  ordinary approval-flow shape (UI panel derivation, telemetry, a role
+  succeeding where another fails) that every other domain's own
+  approval-flow test already established, so it deliberately uses the
+  same simple mechanism they do rather than re-deriving the more
+  sophisticated proof the pipeline test already owns.
+- **What this still doesn't do**, for the identical reason every prior
+  domain's own section states it: an Agent-selected UI component for
+  nursing, the counterpart to `VitalsEntryPanel`. No CDSS exists for
+  nursing to drive one, so building it now would be guessing at a
+  scenario, not proving one. Unlike every prior domain's section, this
+  gap is now uniform across all eight domains — only `patient` has one,
+  because only `patient` has a CDSS to drive it.
