@@ -121,7 +121,22 @@ built, so they land on the correct side by construction:
 - **When a real database is wired in:** implement `ImperativeShell`
   and `EffectCommitter` against it. Nothing in `core/execution`,
   `agentic/shell`, or `human` needs to change shape — they were built
-  against the interface from the start.
+  against the interface from the start. **Resolved** —
+  `src/agentic/shell/sqliteShell.ts`'s `createSqliteShell` is exactly
+  this, built against `node:sqlite` (Node's built-in SQLite module:
+  real ACID-compliant SQL, zero new npm dependency, no native-module
+  build step — the deliberate choice this note asked for, made). Proven
+  a genuine drop-in by re-running `act()`'s own accept/reject/stale
+  scenarios against it with zero changes to `act()` itself — see
+  `tests/agentic/shell/sqliteShellActIntegration.test.ts`. One real
+  finding surfaced while building it: `node:sqlite` only exists in
+  `node:`-prefixed form, and Vitest's Vite-based test transform
+  silently drops that prefix and fails to resolve the result — a real,
+  confirmed Vitest/Vite compatibility gap for this specific builtin, not
+  a hypothetical one, fixed with `createRequire` (an ordinary runtime
+  call, never a static specifier a transform would rewrite), and
+  verified against the actual compiled `dist/` output running under
+  plain Node, not just under Vitest.
 - **When an LLM vendor call is added for real** (today's
   `llmPlanner.ts` takes an injected, vendor-agnostic `CompletionFn`):
   keep it injected. The moment a specific vendor SDK gets imported
