@@ -2909,3 +2909,54 @@ separate slices.
   identical reason bed's and lab's own tests do, and building a
   `VitalsEntryPanel` counterpart now would be guessing at a scenario
   pharmacy hasn't actually asked for.
+
+## Resolved: scheduling, the fifth domain wired through the verification spine and UI contract
+
+Scheduling's agentic-layer integration (`schedulingRiskTiers`,
+`schedulingInstructionValidators`, `schedulingVerifier`,
+`EXAMPLE_schedulingApprovalPolicy`) already existed — see "Resolved:
+scheduling's agentic-layer integration" above. What this slice closes
+is the same last-mile gap bed, lab, and pharmacy each got their own
+section for: `schedulingVerificationWorkers`
+(`agentic/verification/scheduling.ts`) and `ui/scheduling.ts`'s
+`ApprovalConfirmationPanel`, proven equivalent to `schedulingVerifier`
+and wired into a real approval flow.
+
+- **The first domain where the spine has to discriminate between two
+  tiers with *disjoint* required roles, not a superset/subset pair.**
+  Lab's and pharmacy's `approval-required` role is a strict subset of
+  their `review-required` role list (`physician` alone out of
+  `[physician, lab-technologist]` for lab; `pharmacist` alone out of
+  `[physician, pharmacist]` for pharmacy) — a senior role always also
+  covers the junior tier. `EXAMPLE_schedulingApprovalPolicy` doesn't
+  work that way: `'or-director'` never appears at `review-required`
+  and `'scheduling-coordinator'` never appears at `approval-required`.
+  `schedulingAgenticPipelineEndToEnd.test.ts` already proved a
+  scheduling-coordinator can't approve `CancelBooking`;
+  `schedulingApprovalFlowEndToEnd.test.ts` adds the half that test
+  couldn't show on its own — an `or-director` *succeeding* at exactly
+  the tier a scheduling-coordinator fails, plus the UI panel derivation
+  and telemetry recording every other domain's approval-flow test
+  already exercises.
+- **`SchedulingApprovalUiComponent` tracks `bookingIds`, the field
+  every `SchedulingInstruction` variant actually carries** — the same
+  "pick the field every instruction kind carries" reasoning `ui/bed.ts`'s
+  `bedIds`, `ui/lab.ts`'s `orderIds`, and `ui/pharmacy.ts`'s
+  `prescriptionIds` already established. `resourceId`/`subjectId`/
+  `startAt`/`endAt` only exist on `ScheduleBooking`; `bookingId` is the
+  one field both variants carry.
+- **Scheduling already has a real choreography consumer
+  (`patientToScheduling.ts`), unlike bed/lab/pharmacy at the time their
+  own sections were written — but that doesn't change the "no CDSS/LLM
+  planner" gap.** `patientToScheduling.ts`'s reaction commits directly
+  through `actHuman()`, never through this spine's
+  `ProposalLog`/`toPlanProposal` path, so
+  `schedulingVerificationWorkers`' own spine-equivalence tests still use
+  hand-constructed proposals for the identical reason bed's, lab's, and
+  pharmacy's do — a real consumer existing elsewhere in the codebase
+  doesn't retroactively make it a consumer of *this* pipeline.
+- **What this still doesn't do**, for the identical reason every prior
+  domain's own section states it: an Agent-selected UI component for
+  scheduling, the counterpart to `VitalsEntryPanel`. No CDSS exists for
+  scheduling to drive one, so building it now would be guessing at a
+  scenario, not proving one.
