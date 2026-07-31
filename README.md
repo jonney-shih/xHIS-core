@@ -37,3 +37,12 @@ discipline" for the full story, including why the rule checks
 `master` is a protected branch — no direct pushes, every change lands
 through a pull request whose `verify` check has passed. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the actual workflow.
+
+## Architecture boundaries
+
+This repository is, in its entirety, server-side code — the
+deterministic core plus the agentic layer built on it. See
+[`CLAUDE.md`](CLAUDE.md) for the hybrid client-server guardrails future
+code generation should follow, and
+[`docs/HYBRID_ARCHITECTURE_ALIGNMENT.md`](docs/HYBRID_ARCHITECTURE_ALIGNMENT.md)
+for the audit that confirmed there are no boundary leaks today.
