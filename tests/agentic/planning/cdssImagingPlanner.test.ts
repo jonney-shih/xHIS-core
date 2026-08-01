@@ -3,6 +3,7 @@ import { createCdssImagingPlanner } from '../../../src/agentic/planning/cdssImag
 import type { ImagingDischargeSignal } from '../../../src/agentic/planning/cdssImagingPlanner.js';
 import { encounterId, isoTimestamp, studyId } from '../../../src/instructions/imaging/ids.js';
 import type { ImagingContext } from '../../../src/instructions/imaging/types.js';
+import { patientId } from '../../../src/instructions/patient/ids.js';
 
 const emptyImagingContext: ImagingContext = { studies: {} };
 
@@ -14,7 +15,7 @@ describe('createCdssImagingPlanner', () => {
         'study-1': { studyId: studyId('study-1'), encounterId: encounterId('encounter-1'), modality: 'CT', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') },
       },
     };
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan(
       { description: 'discharge sweep' },
@@ -48,7 +49,7 @@ describe('createCdssImagingPlanner', () => {
         },
       },
     };
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { imagingContext: context, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
 
@@ -59,7 +60,7 @@ describe('createCdssImagingPlanner', () => {
 
   it('produces no recommendation for a signal whose encounter has never had any study at all', async () => {
     const planner = createCdssImagingPlanner();
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { imagingContext: emptyImagingContext, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
 
@@ -81,7 +82,7 @@ describe('createCdssImagingPlanner', () => {
         'study-1': { studyId: studyId('study-1'), encounterId: encounterId('encounter-1'), modality: 'CT', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') },
       },
     };
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { imagingContext: context, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
 
@@ -102,7 +103,7 @@ describe('createCdssImagingPlanner', () => {
         'study-2': { studyId: studyId('study-2'), encounterId: encounterId('encounter-2'), modality: 'MRI', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') },
       },
     };
-    const signals: readonly ImagingDischargeSignal[] = [{ encounterId: encounterId('encounter-1') }, { encounterId: encounterId('encounter-2') }];
+    const signals: readonly ImagingDischargeSignal[] = [{ encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') }, { encounterId: encounterId('encounter-2'), patientId: patientId('patient-2') }];
 
     const result = await planner.plan({ description: 'discharge sweep' }, { imagingContext: context, signals }, '2026-08-01T01:00:00.000Z', []);
 
@@ -119,7 +120,7 @@ describe('createCdssImagingPlanner', () => {
     const context: ImagingContext = {
       studies: { 'study-1': { studyId: studyId('study-1'), encounterId: encounterId('encounter-1'), modality: 'CT', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') } },
     };
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const first = await planner.plan({ description: 'discharge sweep' }, { imagingContext: context, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
     const second = await planner.plan(

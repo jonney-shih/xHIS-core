@@ -21,6 +21,7 @@ import { createFileOutboxCursor } from '../../../src/core/io/outboxCursor.js';
 import { isoTimestamp } from '../../../src/core/temporal.js';
 import { imagingEngine } from '../../../src/instructions/imaging/engine.js';
 import { encounterId, studyId } from '../../../src/instructions/imaging/ids.js';
+import { patientId } from '../../../src/instructions/patient/ids.js';
 import type { ImagingContext, ImagingEffect, ImagingInstruction } from '../../../src/instructions/imaging/types.js';
 
 const contextWithOrderedStudy: ImagingContext = {
@@ -79,7 +80,7 @@ async function verifyWithAllImagingWorkers(
  */
 describe('a CDSS-sourced imaging proposal, Checked through the verification spine, reaches the same decision imagingVerifier already reaches inline', () => {
   it('needs human approval for a CDSS-recommended CancelStudy exactly like imagingVerifier does, and the scheduler correctly leaves it awaiting-approval', async () => {
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     // Explicit type arguments: same mapped-type inference limitation
     // `createEngine` call sites already document (see
     // `imaging/engine.ts`).
@@ -130,7 +131,7 @@ describe('a CDSS-sourced imaging proposal, Checked through the verification spin
   });
 
   it('a human approving afterward still commits, via the exact same mechanism the direct pipeline already uses', async () => {
-    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: ImagingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planResult = await planWithRetries<CdssImagingContext, ImagingInstruction>(
       createCdssImagingPlanner(),
       imagingInstructionValidators,
