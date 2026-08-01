@@ -3484,3 +3484,53 @@ UI-contract wiring already closed earlier this session.
   nursing, the eighth and last domain wired through the verification
   spine and UI contract" already made for the spine/UI-contract half of
   this coverage sweep.
+
+## Resolved: the Agent-selected UI half of the contract, proven against a second domain (bed)
+
+Every CDSS-planner section above closed with the identical line: no
+Agent-selected UI component exists for that domain, because only
+`patient` has one to drive. `cdssBedPlanner.ts`'s new
+`suggestVitalsEntryPanel` closes that gap for bed specifically — not by
+inventing a bed-specific component, but by giving bed's own CDSS rule
+(`createCdssBedPlanner`) the ability to propose the *identical*
+`VitalsEntryPanel` patient's triage rule already proposes.
+
+- **`VitalsEntryPanel` is reused, not duplicated — the concept belongs
+  to the UI action, not to whichever domain's rule happened to trigger
+  it.** A vitals-entry form needs to know which patient's vitals it's
+  collecting regardless of *why* someone decided vitals should be
+  entered; triage noticing that reason (a new admission) and bed
+  noticing it (a new bed assignment) are two independent, real
+  motivations for the identical suggestion. Reusing
+  `PatientVitalsUiComponent`/`patientVitalsComponentPropsValidators`
+  from `ui/patient.ts` rather than defining a same-shaped
+  `BedVitalsUiComponent` is the same "the concept belongs to the domain
+  that actually owns it" reasoning `instructions/bed/ids.ts` already
+  applies to re-exporting `EncounterId` from patient instead of
+  rebranding a second, incompatible one.
+- **`BedNeedSignal` needed a real, motivated extension —
+  `patientId` — not an invented one.** The rule `createCdssBedPlanner`
+  already runs never reads `patientId`; only `suggestVitalsEntryPanel`
+  does. But a genuine "this encounter needs a bed" signal was always
+  going to know which patient it's for — the same "a signal already
+  knows this in reality" reasoning `TriageSignal` was built with from
+  its first slice — so this wasn't retrofitting a field to satisfy a
+  type, it was noticing bed's own signal had been narrower than the
+  real event it represents.
+- **Reused the validation gate proof, not just the component.**
+  `cdssBedPlanningEndToEnd.test.ts`'s two new tests are structurally
+  identical to `cdssPlanningEndToEnd.test.ts`'s own vitals tests — a
+  well-formed suggestion renders, and the identical shape with
+  `patientId` corrupted away falls back — because the claim being
+  proven ("Agent-selected content, however deterministic its source,
+  still passes through Guardrail #1's validation layer") doesn't change
+  per domain; only the caller proposing the component does.
+- **What this still doesn't do: an Agent-selected UI component for
+  lab, pharmacy, scheduling, ledger, imaging, or nursing.** Bed earned
+  this slice specifically because `VitalsEntryPanel` was already a
+  natural fit for "a new bed assignment" the same way it was for "a new
+  admission." Whether any *other* domain's own CDSS signal has an
+  equally natural UI-suggestion counterpart is a separate question this
+  slice doesn't answer — building one for a domain without first
+  finding that natural fit would be guessing at a scenario, the same
+  restraint this whole coverage sweep has applied throughout.

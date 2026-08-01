@@ -3,19 +3,28 @@ import { findBedHoldingEncounter } from '../../integration/bedLookup.js';
 import type { BedSelectionStrategy } from '../../integration/bedSelection.js';
 import { isoTimestamp, type EncounterId } from '../../instructions/bed/ids.js';
 import type { BedContext } from '../../instructions/bed/types.js';
+import type { PatientId } from '../../instructions/patient/ids.js';
+import type { PatientVitalsUiComponent } from '../ui/patient.js';
+import type { RawUiRenderOutput } from '../ui/toUiRenderProposal.js';
 import type { PlanningGoal } from './proposal.js';
 import type { RawPlanner, RawPlanOutput } from './toPlanProposal.js';
 
 /**
  * A structured "this encounter needs a bed" signal — the bed-domain
- * counterpart to `cdssPlanner.ts`'s `TriageSignal`. Deliberately just an
- * `encounterId`: unlike triage's `severity`, there's no second dimension
- * this rule reads (see `plan`'s own doc comment for why `BedSelectionStrategy`,
- * not this signal, is where any future acuity/ward-matching sophistication
- * would go).
+ * counterpart to `cdssPlanner.ts`'s `TriageSignal`. Carries `patientId`
+ * alongside `encounterId` for the identical reason `TriageSignal` does:
+ * a real bed-need event always knows which patient it's for, not just
+ * which encounter — nothing about `plan`'s own rule reads `patientId`
+ * (it has no second dimension to react to, unlike triage's `severity`;
+ * see `plan`'s own doc comment for why `BedSelectionStrategy`, not this
+ * signal, is where any future acuity/ward-matching sophistication would
+ * go), but `suggestVitalsEntryPanel` below does — a vitals-entry
+ * suggestion is a patient-level UI action, and a form for "whose vitals"
+ * needs to name a patient, not just an encounter.
  */
 export interface BedNeedSignal {
   readonly encounterId: EncounterId;
+  readonly patientId: PatientId;
 }
 
 /**
@@ -138,5 +147,42 @@ export function createCdssBedPlanner(): RawPlanner<CdssBedContext> {
         promptVersion: 'bed-assignment-ruleset-v1',
       });
     },
+  };
+}
+
+/**
+ * Bed's own counterpart to `cdssPlanner.ts`'s `suggestVitalsEntryPanel`
+ * — deliberately the *same* component, not a bed-specific lookalike.
+ * `VitalsEntryPanel` (Guardrail #2's own "vital sign entries" example)
+ * is a patient-level UI action: a vitals-entry form needs to know which
+ * patient's vitals it's collecting, a fact that has nothing to do with
+ * which domain's rule happened to notice the need for one. Triage
+ * noticing it (an admission) and bed noticing it (a bed assignment) are
+ * two independent, real reasons the identical suggestion is worth
+ * making — reusing `PatientVitalsUiComponent`/
+ * `patientVitalsComponentPropsValidators` from `ui/patient.ts` is the
+ * same "the concept belongs to the domain that actually owns it, don't
+ * redefine a same-shaped-but-different type" reasoning
+ * `instructions/bed/ids.ts` already applies to re-exporting `EncounterId`
+ * from patient rather than rebranding a second one.
+ *
+ * Returns the *raw*, still-untrusted shape `toUiRenderProposal` expects
+ * — same "being deterministic doesn't exempt this output from the same
+ * validation gate an LLM's raw JSON would have to pass through" claim
+ * `cdssPlanner.ts`'s own `suggestVitalsEntryPanel` already proved for
+ * patient, now proven again for a second real caller of the identical
+ * component.
+ */
+export function suggestVitalsEntryPanel(signal: BedNeedSignal): RawUiRenderOutput {
+  const component: PatientVitalsUiComponent = {
+    component: 'VitalsEntryPanel',
+    props: { encounterId: signal.encounterId, patientId: signal.patientId },
+  };
+
+  return {
+    component,
+    rationale: 'CDSS bed-assignment rule: suggesting vitals entry for a newly recommended bed assignment',
+    modelVersion: 'cdss-bed-assignment-rule-engine-v1',
+    promptVersion: 'bed-assignment-ruleset-v1',
   };
 }

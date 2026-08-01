@@ -3,6 +3,7 @@ import { createCdssBedPlanner } from '../../../src/agentic/planning/cdssBedPlann
 import type { BedNeedSignal } from '../../../src/agentic/planning/cdssBedPlanner.js';
 import { EXAMPLE_firstAvailableBedStrategy } from '../../../src/integration/bedSelection.js';
 import { bedId, encounterId, isoTimestamp } from '../../../src/instructions/bed/ids.js';
+import { patientId } from '../../../src/instructions/patient/ids.js';
 import type { BedContext } from '../../../src/instructions/bed/types.js';
 
 const strategy = EXAMPLE_firstAvailableBedStrategy;
@@ -11,7 +12,7 @@ describe('createCdssBedPlanner', () => {
   it('recommends assignment for a signal not yet holding a bed, when one is available', async () => {
     const planner = createCdssBedPlanner();
     const context: BedContext = { beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } } };
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan(
       { description: 'bed board sweep' },
@@ -39,7 +40,7 @@ describe('createCdssBedPlanner', () => {
         'bed-2': { bedId: bedId('bed-2'), status: 'available' },
       },
     };
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'bed board sweep' }, { bedContext: context, signals: [signal], strategy }, '2026-08-01T00:00:00.000Z', []);
 
@@ -53,7 +54,7 @@ describe('createCdssBedPlanner', () => {
     const context: BedContext = {
       beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'occupied', encounterId: encounterId('encounter-0'), assignedAt: isoTimestamp('2026-07-31T00:00:00.000Z') } },
     };
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'bed board sweep' }, { bedContext: context, signals: [signal], strategy }, '2026-08-01T00:00:00.000Z', []);
 
@@ -71,7 +72,7 @@ describe('createCdssBedPlanner', () => {
         'bed-3': { bedId: bedId('bed-3'), status: 'available' },
       },
     };
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'bed board sweep' }, { bedContext: context, signals: [signal], strategy }, '2026-08-01T00:00:00.000Z', []);
 
@@ -91,7 +92,7 @@ describe('createCdssBedPlanner', () => {
   it('never recommends the same bed to two different signals in the same proposal, even when only one bed is available', async () => {
     const planner = createCdssBedPlanner();
     const context: BedContext = { beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } } };
-    const signals: readonly BedNeedSignal[] = [{ encounterId: encounterId('encounter-1') }, { encounterId: encounterId('encounter-2') }];
+    const signals: readonly BedNeedSignal[] = [{ encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') }, { encounterId: encounterId('encounter-2'), patientId: patientId('patient-2') }];
 
     const result = await planner.plan({ description: 'bed board sweep' }, { bedContext: context, signals, strategy }, '2026-08-01T00:00:00.000Z', []);
 
@@ -107,7 +108,7 @@ describe('createCdssBedPlanner', () => {
     const context: BedContext = {
       beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' }, 'bed-2': { bedId: bedId('bed-2'), status: 'available' } },
     };
-    const signals: readonly BedNeedSignal[] = [{ encounterId: encounterId('encounter-1') }, { encounterId: encounterId('encounter-2') }];
+    const signals: readonly BedNeedSignal[] = [{ encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') }, { encounterId: encounterId('encounter-2'), patientId: patientId('patient-2') }];
 
     const result = await planner.plan({ description: 'bed board sweep' }, { bedContext: context, signals, strategy }, '2026-08-01T00:00:00.000Z', []);
 
@@ -122,7 +123,7 @@ describe('createCdssBedPlanner', () => {
   it('ignores feedback — the rule is a pure function of context and signals, not of prior attempts', async () => {
     const planner = createCdssBedPlanner();
     const context: BedContext = { beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } } };
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const first = await planner.plan({ description: 'bed board sweep' }, { bedContext: context, signals: [signal], strategy }, '2026-08-01T00:00:00.000Z', []);
     const second = await planner.plan(
