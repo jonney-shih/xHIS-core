@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createCdssLabPlanner } from '../../../src/agentic/planning/cdssLabPlanner.js';
 import type { LabDischargeSignal } from '../../../src/agentic/planning/cdssLabPlanner.js';
 import { encounterId, isoTimestamp, labOrderId } from '../../../src/instructions/lab/ids.js';
+import { patientId } from '../../../src/instructions/patient/ids.js';
 import type { LabContext } from '../../../src/instructions/lab/types.js';
 
 const emptyLabContext: LabContext = { orders: {} };
@@ -14,7 +15,7 @@ describe('createCdssLabPlanner', () => {
         'order-1': { orderId: labOrderId('order-1'), encounterId: encounterId('encounter-1'), testCode: 'CBC', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') },
       },
     };
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan(
       { description: 'discharge sweep' },
@@ -48,7 +49,7 @@ describe('createCdssLabPlanner', () => {
         },
       },
     };
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { labContext: context, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
 
@@ -59,7 +60,7 @@ describe('createCdssLabPlanner', () => {
 
   it('produces no recommendation for a signal whose encounter has never had any order at all', async () => {
     const planner = createCdssLabPlanner();
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { labContext: emptyLabContext, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
 
@@ -82,7 +83,7 @@ describe('createCdssLabPlanner', () => {
         'order-1': { orderId: labOrderId('order-1'), encounterId: encounterId('encounter-1'), testCode: 'CBC', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') },
       },
     };
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { labContext: context, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
 
@@ -110,7 +111,7 @@ describe('createCdssLabPlanner', () => {
         'order-2': { orderId: labOrderId('order-2'), encounterId: encounterId('encounter-2'), testCode: 'CMP', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') },
       },
     };
-    const signals: readonly LabDischargeSignal[] = [{ encounterId: encounterId('encounter-1') }, { encounterId: encounterId('encounter-2') }];
+    const signals: readonly LabDischargeSignal[] = [{ encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') }, { encounterId: encounterId('encounter-2'), patientId: patientId('patient-2') }];
 
     const result = await planner.plan({ description: 'discharge sweep' }, { labContext: context, signals }, '2026-08-01T01:00:00.000Z', []);
 
@@ -127,7 +128,7 @@ describe('createCdssLabPlanner', () => {
     const context: LabContext = {
       orders: { 'order-1': { orderId: labOrderId('order-1'), encounterId: encounterId('encounter-1'), testCode: 'CBC', status: 'ordered', orderedAt: isoTimestamp('2026-08-01T00:00:00.000Z') } },
     };
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const first = await planner.plan({ description: 'discharge sweep' }, { labContext: context, signals: [signal] }, '2026-08-01T01:00:00.000Z', []);
     const second = await planner.plan(
