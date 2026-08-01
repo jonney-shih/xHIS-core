@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCdssSchedulingPlanner } from '../../../src/agentic/planning/cdssSchedulingPlanner.js';
+import { createCdssSchedulingPlanner, suggestVitalsEntryPanel } from '../../../src/agentic/planning/cdssSchedulingPlanner.js';
 import type { CdssSchedulingContext, SchedulingDischargeSignal } from '../../../src/agentic/planning/cdssSchedulingPlanner.js';
 import { planWithRetries } from '../../../src/agentic/planning/planWithRetries.js';
 import { schedulingInstructionValidators } from '../../../src/agentic/validation/scheduling.js';
@@ -11,8 +11,10 @@ import { resolveApprovalForProposal } from '../../../src/agentic/identity/resolv
 import { act } from '../../../src/agentic/shell/act.js';
 import { createInMemoryShell } from '../../../src/agentic/shell/inMemoryShell.js';
 import { deriveApprovalConfirmationPanel } from '../../../src/agentic/ui/scheduling.js';
+import { patientVitalsComponentPropsValidators } from '../../../src/agentic/ui/patient.js';
 import { createInMemoryUiProposalTelemetryLog } from '../../../src/agentic/ui/telemetry.js';
-import { encounterId } from '../../../src/instructions/patient/ids.js';
+import { resolveUiRenderOutcome } from '../../../src/agentic/ui/resolveUiRenderOutcome.js';
+import { encounterId, patientId } from '../../../src/instructions/patient/ids.js';
 import { schedulingEngine } from '../../../src/instructions/scheduling/engine.js';
 import { bookingId, isoTimestamp, resourceId } from '../../../src/instructions/scheduling/ids.js';
 import type { SchedulingContext, SchedulingEffect, SchedulingInstruction } from '../../../src/instructions/scheduling/types.js';
@@ -34,10 +36,13 @@ const contextWithScheduledBooking: SchedulingContext = {
  * The scheduling-domain counterpart to `cdssLabPlanningEndToEnd.test.ts`
  * and `cdssPharmacyPlanningEndToEnd.test.ts` — same `planWithRetries` ->
  * `toPlanProposal` -> Do -> Check -> approval -> Act pipeline, now
- * driven by `createCdssSchedulingPlanner`. Does not repeat the
- * `suggestVitalsEntryPanel`/`resolveUiRenderOutcome` tests for the same
- * reason every prior non-patient CDSS end-to-end file doesn't: no
- * Agent-selected UI component exists for scheduling.
+ * driven by `createCdssSchedulingPlanner`. Also proves the
+ * Agent-selected UI half of the contract for scheduling — see the
+ * vitals-entry-panel tests below, reusing the identical "discharge
+ * vitals" justification lab's own section already established (see
+ * `cdssSchedulingPlanner.ts`'s own `suggestVitalsEntryPanel` doc
+ * comment: the same real-world discharge event, not a fresh judgment
+ * call).
  */
 describe('CDSS scheduling-cancellation planning path, end to end', () => {
   it('retrying a deterministic rule against an unchanging bad timestamp produces the identical failure every attempt, unlike an LLM recovering from feedback', async () => {
@@ -47,7 +52,7 @@ describe('CDSS scheduling-cancellation planning path, end to end', () => {
     // is the one input that flows straight into `cancelledAt`
     // unvalidated, and `planWithRetries` passes the same one to every
     // attempt.
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planner = createCdssSchedulingPlanner();
 
     // Explicit type arguments: same mapped-type inference limitation
@@ -69,7 +74,7 @@ describe('CDSS scheduling-cancellation planning path, end to end', () => {
   });
 
   it('a CDSS-recommended cancellation is not exempt from risk-tiered human approval, and a scheduling-coordinator cannot clear it — only an or-director can', async () => {
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planner = createCdssSchedulingPlanner();
 
     const planResult = await planWithRetries<CdssSchedulingContext, SchedulingInstruction>(
@@ -169,7 +174,7 @@ describe('CDSS scheduling-cancellation planning path, end to end', () => {
   });
 
   it('an unresolved (impersonated) approval leaves a CDSS-recommended cancellation awaiting approval, never committed', async () => {
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planner = createCdssSchedulingPlanner();
 
     const planResult = await planWithRetries<CdssSchedulingContext, SchedulingInstruction>(
@@ -209,5 +214,67 @@ describe('CDSS scheduling-cancellation planning path, end to end', () => {
 
     expect(outcome).toBe('awaiting-approval');
     expect(shell.commits).toHaveLength(0);
+  });
+
+  /**
+   * The fourth real consumer of the identical `VitalsEntryPanel`
+   * component, after patient's, bed's, and lab's own vitals tests.
+   * Genuinely Agent-selected, so it has to pass through the same
+   * validation gate an LLM's raw JSON would, even though the source
+   * here is a deterministic rule and the triggering signal is a
+   * discharge, the same event lab's own version already used.
+   */
+  it("scheduling's own vitals-entry-panel suggestion, for the same signal that recommended a cancellation, renders through the real validation gate", () => {
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
+    const telemetryLog = createInMemoryUiProposalTelemetryLog();
+
+    const outcome = resolveUiRenderOutcome({
+      registry: patientVitalsComponentPropsValidators,
+      raw: suggestVitalsEntryPanel(signal),
+      proposedAt: '2026-08-01T11:00:00.000Z',
+      telemetryLog,
+      recordedAt: '2026-08-01T11:00:01.000Z',
+    });
+
+    expect(outcome).toEqual({
+      kind: 'render',
+      component: { component: 'VitalsEntryPanel', props: { encounterId: 'encounter-1', patientId: 'patient-1' } },
+    });
+    expect(telemetryLog.entries).toEqual([
+      { component: 'VitalsEntryPanel', outcome: 'rendered', reasons: [], recordedAt: '2026-08-01T11:00:01.000Z' },
+    ]);
+  });
+
+  it('a vitals-entry-panel candidate missing a required field falls back instead of rendering, even though the source rule is deterministic', () => {
+    const telemetryLog = createInMemoryUiProposalTelemetryLog();
+
+    // The same shape suggestVitalsEntryPanel produces, but with
+    // patientId corrupted away -- standing in for whatever real-world
+    // failure mode (a bad upstream signal, a future rule-engine bug)
+    // could produce an incomplete candidate; being deterministic never
+    // exempts it from the same fallback path an LLM's malformed JSON
+    // would take.
+    const outcome = resolveUiRenderOutcome({
+      registry: patientVitalsComponentPropsValidators,
+      raw: {
+        component: { component: 'VitalsEntryPanel', props: { encounterId: 'encounter-1' } },
+        rationale: 'CDSS scheduling rule: suggesting discharge vitals entry for a newly recommended booking cancellation',
+        modelVersion: 'cdss-scheduling-cancellation-rule-engine-v1',
+        promptVersion: 'scheduling-cancellation-ruleset-v1',
+      },
+      proposedAt: '2026-08-01T11:00:00.000Z',
+      telemetryLog,
+      recordedAt: '2026-08-01T11:00:01.000Z',
+    });
+
+    expect(outcome).toEqual({ kind: 'fallback', reasons: ["'props.patientId' must be a non-empty string"] });
+    expect(telemetryLog.entries).toEqual([
+      {
+        component: 'VitalsEntryPanel',
+        outcome: 'fallback',
+        reasons: ["'props.patientId' must be a non-empty string"],
+        recordedAt: '2026-08-01T11:00:01.000Z',
+      },
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCdssSchedulingPlanner } from '../../../src/agentic/planning/cdssSchedulingPlanner.js';
 import type { SchedulingDischargeSignal } from '../../../src/agentic/planning/cdssSchedulingPlanner.js';
-import { encounterId } from '../../../src/instructions/patient/ids.js';
+import { encounterId, patientId } from '../../../src/instructions/patient/ids.js';
 import { bookingId, isoTimestamp, resourceId } from '../../../src/instructions/scheduling/ids.js';
 import type { SchedulingContext } from '../../../src/instructions/scheduling/types.js';
 
@@ -22,7 +22,7 @@ describe('createCdssSchedulingPlanner', () => {
         },
       },
     };
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan(
       { description: 'discharge sweep' },
@@ -57,7 +57,7 @@ describe('createCdssSchedulingPlanner', () => {
         },
       },
     };
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { schedulingContext: context, signals: [signal] }, '2026-08-01T11:00:00.000Z', []);
 
@@ -68,7 +68,7 @@ describe('createCdssSchedulingPlanner', () => {
 
   it('produces no recommendation for a signal whose encounter has never had any booking at all', async () => {
     const planner = createCdssSchedulingPlanner();
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { schedulingContext: emptySchedulingContext, signals: [signal] }, '2026-08-01T11:00:00.000Z', []);
 
@@ -87,7 +87,7 @@ describe('createCdssSchedulingPlanner', () => {
         'booking-1': { bookingId: bookingId('booking-1'), resourceId: resourceId('or-1'), subjectId: 'or-1-maintenance', startAt: isoTimestamp('2026-08-01T09:00:00.000Z'), endAt: isoTimestamp('2026-08-01T10:00:00.000Z'), status: 'scheduled' },
       },
     };
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { schedulingContext: context, signals: [signal] }, '2026-08-01T11:00:00.000Z', []);
 
@@ -109,7 +109,7 @@ describe('createCdssSchedulingPlanner', () => {
         'booking-1': { bookingId: bookingId('booking-1'), resourceId: resourceId('or-1'), subjectId: 'encounter-1', startAt: isoTimestamp('2026-08-01T09:00:00.000Z'), endAt: isoTimestamp('2026-08-01T10:00:00.000Z'), status: 'scheduled' },
       },
     };
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const result = await planner.plan({ description: 'discharge sweep' }, { schedulingContext: context, signals: [signal] }, '2026-08-01T13:00:00.000Z', []);
 
@@ -130,7 +130,7 @@ describe('createCdssSchedulingPlanner', () => {
         'booking-2': { bookingId: bookingId('booking-2'), resourceId: resourceId('or-2'), subjectId: 'encounter-2', startAt: isoTimestamp('2026-08-01T09:00:00.000Z'), endAt: isoTimestamp('2026-08-01T10:00:00.000Z'), status: 'scheduled' },
       },
     };
-    const signals: readonly SchedulingDischargeSignal[] = [{ encounterId: encounterId('encounter-1') }, { encounterId: encounterId('encounter-2') }];
+    const signals: readonly SchedulingDischargeSignal[] = [{ encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') }, { encounterId: encounterId('encounter-2'), patientId: patientId('patient-2') }];
 
     const result = await planner.plan({ description: 'discharge sweep' }, { schedulingContext: context, signals }, '2026-08-01T11:00:00.000Z', []);
 
@@ -147,7 +147,7 @@ describe('createCdssSchedulingPlanner', () => {
     const context: SchedulingContext = {
       bookings: { 'booking-1': { bookingId: bookingId('booking-1'), resourceId: resourceId('or-1'), subjectId: 'encounter-1', startAt: isoTimestamp('2026-08-01T09:00:00.000Z'), endAt: isoTimestamp('2026-08-01T10:00:00.000Z'), status: 'scheduled' } },
     };
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
 
     const first = await planner.plan({ description: 'discharge sweep' }, { schedulingContext: context, signals: [signal] }, '2026-08-01T11:00:00.000Z', []);
     const second = await planner.plan(
