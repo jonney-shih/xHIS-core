@@ -3579,3 +3579,45 @@ assignment-triggered one.
   real-world event, and whether any of them has an equally genuine
   UI-suggestion counterpart (to `VitalsEntryPanel` or to something else
   entirely) remains an open question this slice doesn't answer.
+  **Pharmacy has since been checked, and deliberately declined — see
+  the next section.**
+
+## Resolved: why pharmacy doesn't get the VitalsEntryPanel-style UI suggestion
+
+Checked, and deliberately not built. Patient's admission, bed's
+assignment, and lab's discharge each share a property that made
+reusing `VitalsEntryPanel` honest rather than a stretch: every single
+instance of that event genuinely benefits from a vitals check, with no
+per-case judgment required. `createCdssPharmacyPlanner`'s own
+`PharmacyDispenseReadySignal` doesn't share that property, and building
+the suggestion anyway would have meant fabricating a distinction this
+codebase has no data to draw.
+
+- **Dispensing a medication isn't universally vitals-relevant the way
+  the first three triggers were.** Real clinical practice only
+  pre-checks vitals before dispensing *certain* medications — BP
+  medications, insulin, cardiac drugs — not every dispensed item; a
+  topical ointment needs no pre-dispense vitals check at all.
+  Suggesting `VitalsEntryPanel` for every `DispenseMedication`
+  regardless of what's being dispensed would be a blanket rule dressed
+  up as a targeted safety check, not the "same claim, third real
+  caller" reuse bed's and lab's own sections could honestly claim.
+- **The data this distinction would need doesn't exist, on purpose.**
+  `PrescriptionRecord.medicationCode` is deliberately a plain string
+  with no drug-class or monitoring-requirement metadata — the same
+  restraint `cdssPharmacyPlanner.ts`'s own doc comment already applies
+  to not inventing which medication to prescribe in the first place.
+  Building the vitals suggestion here would have meant either
+  fabricating that categorization data or silently ignoring the real
+  distinction it exists to protect — both worse than not building it.
+- **Asked, not assumed.** Given genuine uncertainty about whether the
+  gap should be closed with a coarser (and less honest) rule or left
+  open, this was raised directly rather than resolved unilaterally the
+  way the "is this component/tier combination genuinely new" calls in
+  every prior CDSS section were — the answer here depended on a
+  judgment about acceptable clinical accuracy, not just on tracing
+  what already exists in the codebase.
+- **What this still doesn't do: an Agent-selected UI component for
+  scheduling, ledger, imaging, or nursing.** Pharmacy declining doesn't
+  predict any of these either way — each remains its own open question,
+  the same as before.
