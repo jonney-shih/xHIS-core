@@ -3660,4 +3660,37 @@ the identical component.
   revocation are each their own real-world event, and pharmacy's
   decline already proved this pattern doesn't generalize
   automatically. Each remains an open question to check on its own
-  terms, not to assume either way.
+  terms, not to assume either way. **Ledger has since been checked, and
+  declined more clearly than pharmacy — see the next section.**
+
+## Resolved: why ledger doesn't get the VitalsEntryPanel-style UI suggestion
+
+Checked, and declined — the clearest decline of the two so far, not a
+closer call than pharmacy's.
+
+- **Ledger's reversal signal isn't a clinical event at all, unlike
+  every domain checked before it, accepted or declined.** Bed's
+  assignment, lab's discharge, and scheduling's discharge are each a
+  real point in a patient's clinical encounter; even pharmacy's
+  declined dispense event was still clinically adjacent — dispensing
+  *is* a care action, just not universally vitals-relevant.
+  `createCdssLedgerPlanner`'s `LedgerReversalReadySignal` represents a
+  billing or accounting correction — reversing a posted financial
+  entry. There is no real-world clinical practice that connects a
+  billing correction to a patient's vitals at all, in any subset of
+  cases, the way pharmacy's per-medication practice at least existed
+  for *some* dispenses. Building the suggestion here wouldn't be
+  overreaching a real distinction the way pharmacy's blanket rule
+  would have been — it would be inventing a connection that has no
+  real-world counterpart to overreach from.
+- **Asked and declined again, not defaulted to.** The same genuine
+  uncertainty that made pharmacy's case worth raising directly applied
+  here — confirmed, not assumed, since the assessment itself (whether a
+  billing event ever has clinical relevance) is a judgment call the
+  codebase's own data can't settle by itself.
+- **What this still doesn't do: an Agent-selected UI component for
+  imaging or nursing.** Two declines (pharmacy, ledger) and three
+  accepts (bed, lab, scheduling) is still not a rule — imaging's
+  cancellation and nursing's revocation are each their own real-world
+  event, to be checked on their own terms rather than predicted from
+  the running tally.
