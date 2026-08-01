@@ -3377,3 +3377,52 @@ scheduling.
   CDSS planner's own section states it: an Agent-selected UI component
   for ledger. No concrete render target has been decided, so building
   one now would be guessing at a scenario, not proving one.
+
+## Resolved: CDSS as a Plan source for a seventh domain (imaging)
+
+`createCdssImagingPlanner` (`agentic/planning/cdssImagingPlanner.ts`) is
+the seventh real domain to get a CDSS rule implementing the untrusted
+`RawPlanner<TCtx>` contract, after patient, bed, lab, pharmacy,
+scheduling, and ledger.
+
+- **The honest finding here is that nothing new needed proving about
+  the spine or the approval mechanism — every dimension that mattered
+  for lab's own proof checks out identically for imaging.**
+  `findPendingStudiesForEncounter` matches on a real, branded
+  `EncounterId` foreign key, the same as lab's, not scheduling's
+  convention-only `subjectId` (`imagingLookup.ts`'s own doc comment
+  says it "mirrors ... `findPendingLabOrdersForEncounter` exactly").
+  `CancelStudy` is `'review-required'`, the same lower tier lab's
+  `CancelLabOrder` recommendation lands at, not scheduling's or ledger's
+  top `'approval-required'`. `EXAMPLE_imagingApprovalPolicy`'s
+  `'review-required'` list has two valid approvers, the same shape
+  lab's own lower tier has. Three domains (lab, scheduling, imaging) now
+  share the identical "discharge cancels every still-pending target"
+  real-world shape; this is the second of the three (after lab) to land
+  on that exact tier/policy combination, purely because
+  `risk/imaging.ts`'s and `identity/imaging.ts`'s own,
+  independently-authored choices happened to land there — not because
+  it was assumed to transfer without checking.
+- **What still had genuine value despite the unsurprising rule shape:
+  proving *imaging's own* validators, engine, verifier, and UI panel
+  are wired together correctly for a CDSS-sourced `CancelStudy`.** A
+  generic rule shape being unsurprising doesn't make the domain-specific
+  wiring check itself skippable — `cdssImagingPlanningEndToEnd.test.ts`
+  and its spine counterpart exercise imaging's real
+  `imagingInstructionValidators`, `imagingEngine`, `imagingVerifier`,
+  and `ui/imaging.ts`'s panel exactly as they exist today, not a
+  stand-in.
+- **No approving-role contrast to draw, unlike every prior CDSS
+  end-to-end file.** Lab's, pharmacy's, scheduling's, and ledger's own
+  end-to-end tests each proved one role fails and a different one
+  succeeds at some tier. `CancelStudy`'s tier has two valid approvers
+  and this rule only ever recommends that one instruction kind, so there
+  is no CDSS-recommended instruction here for which any of imaging's
+  own roles would fail — the interesting claim left to prove is only
+  that *some* permitted approval is still required, never an outright
+  `accept`, the identical claim lab's own `OrderLabTest` test proves at
+  its identical tier.
+- **What this still doesn't do**, for the identical reason every prior
+  CDSS planner's own section states it: an Agent-selected UI component
+  for imaging. No concrete render target has been decided, so building
+  one now would be guessing at a scenario, not proving one.
