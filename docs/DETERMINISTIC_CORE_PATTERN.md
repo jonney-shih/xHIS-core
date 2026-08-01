@@ -3426,3 +3426,61 @@ scheduling, and ledger.
   CDSS planner's own section states it: an Agent-selected UI component
   for imaging. No concrete render target has been decided, so building
   one now would be guessing at a scenario, not proving one.
+
+## Resolved: CDSS as a Plan source for the eighth and last domain (nursing)
+
+`createCdssNursingPlanner` (`agentic/planning/cdssNursingPlanner.ts`)
+is the eighth, and last, domain to get a CDSS rule implementing the
+untrusted `RawPlanner<TCtx>` contract. **Every domain in this codebase**
+(patient, bed, lab, pharmacy, scheduling, ledger, imaging, nursing) now
+has one, closing the same coverage gap the verification-spine and
+UI-contract wiring already closed earlier this session.
+
+- **Nursing has no choreography at all — not even the "first automated
+  path" situation pharmacy's and ledger's own sections describe.**
+  Pharmacy and ledger at least lacked a *choreography* reaction while
+  still being triggered by a real-world clinical event a signal could
+  plausibly represent (a pharmacy queue, a reconciliation flag).
+  Nursing's credentialing has no patient-effect trigger of any kind to
+  begin with — no encounter admission or discharge ever implies
+  anything about a staff member's credentials. The restraint not to
+  invent a triage-shaped signal here isn't borrowed from a sibling
+  domain's precedent; it's domain-first, because there is no sibling
+  precedent that applies.
+- **`RevokeCredential` reuses the named-target, dedup-guarded rule
+  shape `createCdssPharmacyPlanner`'s and `createCdssLedgerPlanner`'s
+  own sections established, but lands at the *lower* tier those two
+  didn't — the first time this shape and a top tier have been
+  decoupled.** `RevokeCredential` is `'review-required'`, the same
+  lower tier `CancelLabOrder`'s and `CancelStudy`'s CDSS
+  recommendations land at, not `DispenseMedication`'s/`ReverseEntry`'s
+  `'approval-required'` — even though this rule shares their exact
+  single-target shape, not lab's/imaging's many-to-one one.
+  `risk/nursing.ts`'s own doc comment gives the reason: a role grant
+  already made stays valid even if its backing credential is later
+  revoked, so a wrongful revoke is an operational nuisance, not a
+  wrong-value-drives-a-wrong-decision shape — proving the rule *shape*
+  (named target, dedup guard) and the risk *tier* it lands at are
+  genuinely independent choices, not a package deal the way every prior
+  domain's own combination might have suggested.
+- **`GrantRole` was ruled out for a stronger reason than "would invent
+  content" — it is the one instruction whose committed state backs
+  every other domain's own approval authority.** `cdssNursingPlanner.ts`'s
+  own doc comment states this plainly: recommending a role grant from a
+  rule this simple would let an unreviewed CDSS heuristic originate the
+  exact permission grant this entire spine exists to gate carefully.
+  Every prior domain's "don't invent the primary action" CDSS
+  restraint (`OrderLabTest`'s test code, `PrescribeMedication`'s
+  medication, `PostEntry`'s accounts) was about missing clinical
+  content; this one is about blast radius specifically, the same
+  distinction `risk/nursing.ts`'s own doc comment already draws for why
+  `GrantRole` earns the single highest-stakes tier of any instruction
+  in this codebase.
+- **What this still doesn't do**, for the identical reason every prior
+  CDSS planner's own section states it: an Agent-selected UI component
+  for nursing. Unlike every prior domain's own section, this gap is now
+  uniform across all eight domains — only `patient` has one, because
+  only `patient` has a CDSS to drive it, the same observation "Resolved:
+  nursing, the eighth and last domain wired through the verification
+  spine and UI contract" already made for the spine/UI-contract half of
+  this coverage sweep.
