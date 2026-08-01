@@ -3526,11 +3526,56 @@ inventing a bed-specific component, but by giving bed's own CDSS rule
   still passes through Guardrail #1's validation layer") doesn't change
   per domain; only the caller proposing the component does.
 - **What this still doesn't do: an Agent-selected UI component for
-  lab, pharmacy, scheduling, ledger, imaging, or nursing.** Bed earned
-  this slice specifically because `VitalsEntryPanel` was already a
-  natural fit for "a new bed assignment" the same way it was for "a new
+  pharmacy, scheduling, ledger, imaging, or nursing.** Bed earned this
+  slice specifically because `VitalsEntryPanel` was already a natural
+  fit for "a new bed assignment" the same way it was for "a new
   admission." Whether any *other* domain's own CDSS signal has an
   equally natural UI-suggestion counterpart is a separate question this
   slice doesn't answer — building one for a domain without first
   finding that natural fit would be guessing at a scenario, the same
-  restraint this whole coverage sweep has applied throughout.
+  restraint this whole coverage sweep has applied throughout. **Lab has
+  since found one too — see the next section.**
+
+## Resolved: the Agent-selected UI half of the contract, proven against a third domain (lab)
+
+`cdssLabPlanner.ts`'s new `suggestVitalsEntryPanel` gives lab's own
+CDSS rule the same `VitalsEntryPanel`-suggestion ability bed's own
+section just proved for bed — the third real caller of the identical
+component, after patient's admission-triggered one and bed's
+assignment-triggered one.
+
+- **The real-world motivation here is genuinely different from
+  patient's and bed's, not a mechanical third repeat.** Patient's and
+  bed's own triggers are both *arrival* checkpoints — a new admission,
+  a new bed assignment — where a baseline vitals reading is the obvious
+  first clinical action. Lab's trigger is a *discharge*, the opposite
+  direction. The justification isn't "reuse the component because it
+  worked twice before" — it's "discharge vitals," a real, independently
+  motivated clinical safety practice (a final set of vitals confirming
+  a patient is stable before release), unrelated to why patient's or
+  bed's own triggers happened to fit. The component and the validation
+  gate it passes through don't care which direction motivated the
+  suggestion; only the caller's real-world reasoning does, and that
+  reasoning had to be found fresh for lab, not inherited from bed's.
+- **`LabDischargeSignal` gained `patientId` for the identical reason
+  `BedNeedSignal` did.** The cancellation rule itself never reads it —
+  a discharge is resolved purely by `encounterId` — only
+  `suggestVitalsEntryPanel` does. A genuine discharge signal was always
+  going to know which patient it's for, the same "the signal was
+  narrower than the real event it represents" finding bed's own section
+  already made.
+- **Reused the exact validation-gate proof a third time, not just the
+  component.** `cdssLabPlanningEndToEnd.test.ts`'s two new tests are
+  structurally identical to patient's and bed's own vitals tests — a
+  well-formed suggestion renders, and the identical shape with
+  `patientId` corrupted away falls back — because the claim being
+  proven doesn't change per domain or per caller.
+- **What this still doesn't do: an Agent-selected UI component for
+  pharmacy, scheduling, ledger, imaging, or nursing.** Two domains in a
+  row (bed, lab) finding a real fit for the identical component is
+  still not evidence every remaining domain will — pharmacy's dispense
+  event, scheduling's cancellation, ledger's reversal, imaging's
+  cancellation, and nursing's revocation are each a different kind of
+  real-world event, and whether any of them has an equally genuine
+  UI-suggestion counterpart (to `VitalsEntryPanel` or to something else
+  entirely) remains an open question this slice doesn't answer.

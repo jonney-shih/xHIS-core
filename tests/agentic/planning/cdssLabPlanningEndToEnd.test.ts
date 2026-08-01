@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCdssLabPlanner } from '../../../src/agentic/planning/cdssLabPlanner.js';
+import { createCdssLabPlanner, suggestVitalsEntryPanel } from '../../../src/agentic/planning/cdssLabPlanner.js';
 import type { CdssLabContext, LabDischargeSignal } from '../../../src/agentic/planning/cdssLabPlanner.js';
 import { planWithRetries } from '../../../src/agentic/planning/planWithRetries.js';
 import { labInstructionValidators } from '../../../src/agentic/validation/lab.js';
@@ -11,9 +11,12 @@ import { resolveApprovalForProposal } from '../../../src/agentic/identity/resolv
 import { act } from '../../../src/agentic/shell/act.js';
 import { createInMemoryShell } from '../../../src/agentic/shell/inMemoryShell.js';
 import { deriveApprovalConfirmationPanel } from '../../../src/agentic/ui/lab.js';
+import { patientVitalsComponentPropsValidators } from '../../../src/agentic/ui/patient.js';
 import { createInMemoryUiProposalTelemetryLog } from '../../../src/agentic/ui/telemetry.js';
+import { resolveUiRenderOutcome } from '../../../src/agentic/ui/resolveUiRenderOutcome.js';
 import { labEngine } from '../../../src/instructions/lab/engine.js';
 import { encounterId, isoTimestamp, labOrderId } from '../../../src/instructions/lab/ids.js';
+import { patientId } from '../../../src/instructions/patient/ids.js';
 import type { LabContext, LabEffect, LabInstruction } from '../../../src/instructions/lab/types.js';
 
 const contextWithPendingOrder: LabContext = {
@@ -25,11 +28,13 @@ const contextWithPendingOrder: LabContext = {
 /**
  * The lab-domain counterpart to `cdssBedPlanningEndToEnd.test.ts` — same
  * `planWithRetries` -> `toPlanProposal` -> Do -> Check -> approval -> Act
- * pipeline, now driven by `createCdssLabPlanner`. Does not repeat the
- * `suggestVitalsEntryPanel`/`resolveUiRenderOutcome` tests for the same
- * reason bed's own end-to-end file doesn't: no Agent-selected UI
- * component exists for lab, and building one now, unasked, would be
- * guessing at a scenario rather than proving one.
+ * pipeline, now driven by `createCdssLabPlanner`. Also proves the
+ * Agent-selected UI half of the contract for lab — see the
+ * vitals-entry-panel tests below, reusing patient's own
+ * `VitalsEntryPanel` for a genuinely different real-world reason than
+ * patient's or bed's (see `cdssLabPlanner.ts`'s own
+ * `suggestVitalsEntryPanel` doc comment: discharge vitals, not an
+ * arrival checkpoint).
  */
 describe('CDSS lab-cancellation planning path, end to end', () => {
   it('retrying a deterministic rule against an unchanging bad timestamp produces the identical failure every attempt, unlike an LLM recovering from feedback', async () => {
@@ -41,7 +46,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
     // straight through unvalidated is `proposedAt` — a malformed one
     // taints `cancelledAt` on every attempt identically, since
     // `planWithRetries` passes the same `proposedAt` to every attempt.
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planner = createCdssLabPlanner();
 
     // Explicit type arguments: same mapped-type inference limitation
@@ -62,7 +67,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
   });
 
   it('a CDSS-recommended cancellation is not exempt from risk-tiered human approval, and commits only once a permitted identity approves', async () => {
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planner = createCdssLabPlanner();
 
     const planResult = await planWithRetries<CdssLabContext, LabInstruction>(
@@ -146,7 +151,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
   });
 
   it('an unresolved (impersonated) approval leaves a CDSS-recommended cancellation awaiting approval, never committed', async () => {
-    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planner = createCdssLabPlanner();
 
     const planResult = await planWithRetries<CdssLabContext, LabInstruction>(
@@ -186,5 +191,70 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
 
     expect(outcome).toBe('awaiting-approval');
     expect(shell.commits).toHaveLength(0);
+  });
+
+  /**
+   * `ui/resolveUiRenderOutcome.test.ts` proves this mechanism against
+   * the illustrative fixture only; `cdssPlanningEndToEnd.test.ts` and
+   * `cdssBedPlanningEndToEnd.test.ts` each prove it against a real
+   * production consumer. This is the third real consumer of the
+   * identical `VitalsEntryPanel` component: lab's own CDSS rule,
+   * genuinely Agent-selected, so it has to pass through the same
+   * validation gate an LLM's raw JSON would, even though the source
+   * here is a deterministic rule and the triggering signal is a
+   * discharge, not an admission or a bed assignment.
+   */
+  it("lab's own vitals-entry-panel suggestion, for the same signal that recommended a cancellation, renders through the real validation gate", () => {
+    const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
+    const telemetryLog = createInMemoryUiProposalTelemetryLog();
+
+    const outcome = resolveUiRenderOutcome({
+      registry: patientVitalsComponentPropsValidators,
+      raw: suggestVitalsEntryPanel(signal),
+      proposedAt: '2026-08-01T01:00:00.000Z',
+      telemetryLog,
+      recordedAt: '2026-08-01T01:00:01.000Z',
+    });
+
+    expect(outcome).toEqual({
+      kind: 'render',
+      component: { component: 'VitalsEntryPanel', props: { encounterId: 'encounter-1', patientId: 'patient-1' } },
+    });
+    expect(telemetryLog.entries).toEqual([
+      { component: 'VitalsEntryPanel', outcome: 'rendered', reasons: [], recordedAt: '2026-08-01T01:00:01.000Z' },
+    ]);
+  });
+
+  it('a vitals-entry-panel candidate missing a required field falls back instead of rendering, even though the source rule is deterministic', () => {
+    const telemetryLog = createInMemoryUiProposalTelemetryLog();
+
+    // The same shape suggestVitalsEntryPanel produces, but with
+    // patientId corrupted away -- standing in for whatever real-world
+    // failure mode (a bad upstream signal, a future rule-engine bug)
+    // could produce an incomplete candidate; being deterministic never
+    // exempts it from the same fallback path an LLM's malformed JSON
+    // would take.
+    const outcome = resolveUiRenderOutcome({
+      registry: patientVitalsComponentPropsValidators,
+      raw: {
+        component: { component: 'VitalsEntryPanel', props: { encounterId: 'encounter-1' } },
+        rationale: 'CDSS lab rule: suggesting discharge vitals entry for a newly recommended lab-order cancellation',
+        modelVersion: 'cdss-lab-cancellation-rule-engine-v1',
+        promptVersion: 'lab-cancellation-ruleset-v1',
+      },
+      proposedAt: '2026-08-01T01:00:00.000Z',
+      telemetryLog,
+      recordedAt: '2026-08-01T01:00:01.000Z',
+    });
+
+    expect(outcome).toEqual({ kind: 'fallback', reasons: ["'props.patientId' must be a non-empty string"] });
+    expect(telemetryLog.entries).toEqual([
+      {
+        component: 'VitalsEntryPanel',
+        outcome: 'fallback',
+        reasons: ["'props.patientId' must be a non-empty string"],
+        recordedAt: '2026-08-01T01:00:01.000Z',
+      },
+    ]);
   });
 });
