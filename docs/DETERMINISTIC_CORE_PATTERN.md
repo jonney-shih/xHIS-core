@@ -3693,4 +3693,42 @@ closer call than pharmacy's.
   accepts (bed, lab, scheduling) is still not a rule — imaging's
   cancellation and nursing's revocation are each their own real-world
   event, to be checked on their own terms rather than predicted from
-  the running tally.
+  the running tally. **Imaging has since been checked, and accepted —
+  see the next section.**
+
+## Resolved: the Agent-selected UI half of the contract, proven against a fifth domain (imaging)
+
+`cdssImagingPlanner.ts`'s new `suggestVitalsEntryPanel` gives imaging's
+own CDSS rule the same `VitalsEntryPanel`-suggestion ability lab's and
+scheduling's own sections proved for lab and scheduling — the fifth
+real caller of the identical component.
+
+- **This wasn't a fresh clinical judgment call, for the same reason
+  scheduling's wasn't — it's the identical justification lab's own
+  section already established, because it's the identical real-world
+  event.** `ImagingDischargeSignal`, `SchedulingDischargeSignal`, and
+  `LabDischargeSignal` all represent the same patient discharge, not
+  three different events that happen to look similar —
+  `patientToImaging.ts`'s own doc comment already confirms its
+  choreography mirrors `patientToLab.ts` "exactly" for the identical
+  reason. "Discharge vitals," the real safety-check practice that
+  justified reusing the component for lab and scheduling, applies here
+  with equal validity, not a stretched analogy — unlike pharmacy's
+  dispense event or ledger's reversal event, neither of which had a
+  universal real-world counterpart to reuse from.
+- **No per-instance judgment needed here either, for the same reason
+  lab's and scheduling's didn't need one.** The suggestion is tied to
+  the discharge signal itself, not to which studies imaging's own rule
+  happens to find and cancel — a discharge is a discharge regardless
+  of what imaging state it disturbs, the same "the event, not the side
+  effect, is what's universal" reasoning `cdssLabPlanner.ts`'s own
+  version already relies on.
+- **`ImagingDischargeSignal` gained `patientId` for the identical
+  reason `LabDischargeSignal` and `SchedulingDischargeSignal` did.**
+  `createCdssImagingPlanner`'s own cancellation rule never reads it;
+  only `suggestVitalsEntryPanel` does.
+- **What this still doesn't do: an Agent-selected UI component for
+  nursing.** Four accepts (bed, lab, scheduling, imaging) and two
+  declines (pharmacy, ledger) is still not a rule — nursing's
+  credential revocation is its own real-world event, to be checked on
+  its own terms rather than predicted from the running tally.

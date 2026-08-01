@@ -2,6 +2,9 @@ import { ok, type Result } from '../../core/execution/result.js';
 import { findPendingStudiesForEncounter } from '../../integration/imagingLookup.js';
 import type { EncounterId } from '../../instructions/imaging/ids.js';
 import type { ImagingContext } from '../../instructions/imaging/types.js';
+import type { PatientId } from '../../instructions/patient/ids.js';
+import type { PatientVitalsUiComponent } from '../ui/patient.js';
+import type { RawUiRenderOutput } from '../ui/toUiRenderProposal.js';
 import type { PlanningGoal } from './proposal.js';
 import type { RawPlanner, RawPlanOutput } from './toPlanProposal.js';
 
@@ -16,9 +19,15 @@ import type { RawPlanner, RawPlanOutput } from './toPlanProposal.js';
  * admission, so recommending `OrderStudy` from a triage-shaped signal
  * would invent the same clinical judgment `cdssLabPlanner.ts` already
  * declined to invent for `OrderLabTest`.
+ *
+ * Carries `patientId` alongside `encounterId` for the identical reason
+ * `LabDischargeSignal` and `SchedulingDischargeSignal` gained one:
+ * `plan`'s rule below never reads it, but `suggestVitalsEntryPanel`
+ * does.
  */
 export interface ImagingDischargeSignal {
   readonly encounterId: EncounterId;
+  readonly patientId: PatientId;
 }
 
 /** Same "bundle what informs planning, not ambient state" reasoning
@@ -98,5 +107,31 @@ export function createCdssImagingPlanner(): RawPlanner<CdssImagingContext> {
         promptVersion: 'imaging-cancellation-ruleset-v1',
       });
     },
+  };
+}
+
+/**
+ * Imaging's own counterpart to `cdssLabPlanner.ts`'s and
+ * `cdssSchedulingPlanner.ts`'s own `suggestVitalsEntryPanel` — the
+ * identical "discharge vitals" justification, not a fresh clinical
+ * judgment call. `ImagingDischargeSignal` represents the same
+ * real-world discharge event `LabDischargeSignal` and
+ * `SchedulingDischargeSignal` do — the same event
+ * `cdssImagingPlanner.ts`'s own top-level doc comment already confirms
+ * checks out identically to lab's in every other dimension that
+ * mattered. The fifth real caller of the identical `VitalsEntryPanel`
+ * component.
+ */
+export function suggestVitalsEntryPanel(signal: ImagingDischargeSignal): RawUiRenderOutput {
+  const component: PatientVitalsUiComponent = {
+    component: 'VitalsEntryPanel',
+    props: { encounterId: signal.encounterId, patientId: signal.patientId },
+  };
+
+  return {
+    component,
+    rationale: 'CDSS imaging rule: suggesting discharge vitals entry for a newly recommended study cancellation',
+    modelVersion: 'cdss-imaging-cancellation-rule-engine-v1',
+    promptVersion: 'imaging-cancellation-ruleset-v1',
   };
 }
