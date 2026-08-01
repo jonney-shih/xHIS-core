@@ -3332,3 +3332,48 @@ is the fifth real domain to get a CDSS rule implementing the untrusted
   CDSS planner's own section states it: an Agent-selected UI component
   for scheduling. No concrete render target has been decided, so
   building one now would be guessing at a scenario, not proving one.
+
+## Resolved: CDSS as a Plan source for a sixth domain (ledger)
+
+`createCdssLedgerPlanner` (`agentic/planning/cdssLedgerPlanner.ts`) is
+the sixth real domain to get a CDSS rule implementing the untrusted
+`RawPlanner<TCtx>` contract, after patient, bed, lab, pharmacy, and
+scheduling.
+
+- **Ledger has no existing choreography reaction, like pharmacy, unlike
+  bed/lab/scheduling.** There is no `patientToLedger.ts` — ledger's
+  entries are posted and reversed purely through explicit instructions,
+  never implied by any patient effect. So this is ledger's first
+  automated path to any instruction, the same "not a third path
+  alongside an existing one" situation `createCdssPharmacyPlanner`'s own
+  doc comment describes for pharmacy, not bed's/lab's/scheduling's
+  "coexists with an immediate, unapproved reaction" situation.
+- **The rule shape is `createCdssPharmacyPlanner`'s, reused deliberately
+  for the same underlying reason.** `ReverseEntry`, like
+  `DispenseMedication`, names its own target directly (`entryId`) with
+  nothing left to select or look up, and — the same restraint
+  `cdssPharmacyPlanner.ts`'s own doc comment states for
+  `PrescribeMedication` — recommending `PostEntry` would require
+  inventing real financial content (which accounts, which amounts) this
+  codebase has no authority over. The duplicate-target dedup guard
+  (an `entryId` signaled twice in one batch is recommended at most once)
+  is reused for the identical reason too: two `ReverseEntry` instructions
+  for the same entry would doom the whole batch at Do time, not a
+  resource-contention concern the way bed's duplicate-bed guard is.
+- **The third CDSS recommendation to land at a top tier, and the first
+  to combine that with a *nested*, not disjoint, approval policy.**
+  `ReverseEntry` is `'approval-required'`; `EXAMPLE_ledgerApprovalPolicy`'s
+  `'approval-required': ['finance-controller']` is a strict subset of
+  `'review-required': ['billing-clerk', 'finance-controller']` — the
+  same nested shape pharmacy's policy has, not scheduling's disjoint
+  one. `cdssLedgerPlanningEndToEnd.test.ts` proves a `billing-clerk`
+  fails for the "one tier too low inside a shared hierarchy" reason a
+  physician fails to approve pharmacy's `DispenseMedication`, not
+  scheduling's "unrelated role entirely" reason — the same distinction
+  the original ledger-domain wiring (PR #23) already drew, now
+  reconfirmed for a CDSS-sourced proposal specifically rather than
+  assumed to still hold.
+- **What this still doesn't do**, for the identical reason every prior
+  CDSS planner's own section states it: an Agent-selected UI component
+  for ledger. No concrete render target has been decided, so building
+  one now would be guessing at a scenario, not proving one.
