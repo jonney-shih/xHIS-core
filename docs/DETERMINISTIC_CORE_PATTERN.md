@@ -3731,4 +3731,36 @@ real caller of the identical component.
   nursing.** Four accepts (bed, lab, scheduling, imaging) and two
   declines (pharmacy, ledger) is still not a rule — nursing's
   credential revocation is its own real-world event, to be checked on
-  its own terms rather than predicted from the running tally.
+  its own terms rather than predicted from the running tally. **Nursing
+  has since been checked, and declined — see the next section, closing
+  out the sweep across all eight domains.**
+
+## Resolved: why nursing doesn't get the VitalsEntryPanel-style UI suggestion
+
+Checked, and declined — the clearest decline of the three, clearer
+even than ledger's.
+
+- **Nursing's revocation signal isn't tied to a patient at all, unlike
+  every other domain checked, accepted or declined.** Bed's
+  assignment, lab's discharge, scheduling's discharge, and imaging's
+  discharge are each a real point in a patient's clinical encounter.
+  Even ledger's declined reversal signal represented a correction to a
+  posted financial entry that traces back to *some* patient's billing
+  record. `createCdssNursingPlanner`'s
+  `CredentialRevocationReadySignal` carries only a `credentialId` — no
+  `encounterId`, no `patientId`, nothing that names a patient at all.
+  `cdssNursingPlanner.ts`'s own doc comment already confirms this
+  isn't an oversight: "nursing has no choreography at all — no patient
+  effect ever implies anything about credentialing." A credential
+  revocation is an event in a *staff member's* professional record,
+  not a patient's clinical one, so there is no real-world practice to
+  reuse `VitalsEntryPanel`'s justification from, at any distance.
+- **Asked and declined again, not defaulted to.** The same genuine
+  uncertainty that made pharmacy's and ledger's cases worth raising
+  directly applied here — confirmed, not assumed, even though this
+  case turned out to be the clearest of the three once
+  `CredentialRevocationReadySignal`'s own shape was examined.
+- **This closes the sweep.** All eight domains have now been checked
+  on their own terms: five accepts (patient, bed, lab, scheduling,
+  imaging) and three declines (pharmacy, ledger, nursing) — a real
+  split, not a rubber stamp, and not a blanket refusal either.
