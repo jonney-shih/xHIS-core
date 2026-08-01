@@ -3620,4 +3620,44 @@ codebase has no data to draw.
 - **What this still doesn't do: an Agent-selected UI component for
   scheduling, ledger, imaging, or nursing.** Pharmacy declining doesn't
   predict any of these either way — each remains its own open question,
-  the same as before.
+  the same as before. **Scheduling has since been checked and
+  accepted — see the next section.**
+
+## Resolved: the Agent-selected UI half of the contract, proven against a fourth domain (scheduling)
+
+`cdssSchedulingPlanner.ts`'s new `suggestVitalsEntryPanel` gives
+scheduling's own CDSS rule the same `VitalsEntryPanel`-suggestion
+ability lab's own section proved for lab — the fourth real caller of
+the identical component.
+
+- **This wasn't a fresh clinical judgment call the way pharmacy's was
+  — it's the identical justification lab's own section already
+  established, because it's the identical real-world event.**
+  `SchedulingDischargeSignal` and `LabDischargeSignal` both represent a
+  patient discharge, not two different events that happen to look
+  similar — `patientToScheduling.ts`'s own doc comment already
+  confirms the choreography reasoning "recurs" for scheduling for the
+  identical reason it does for lab and imaging. "Discharge vitals," the
+  real safety-check practice that justified reusing the component for
+  lab, applies here with equal validity, not a stretched analogy —
+  unlike pharmacy's dispense event, which needed a *different* kind of
+  event to be universally vitals-relevant and didn't have one.
+- **No per-instance judgment needed here either, for the same reason
+  lab's didn't need one.** The suggestion is tied to the discharge
+  signal itself, not to which bookings the domain's own rule happens to
+  find and cancel — a discharge is a discharge regardless of what
+  scheduling state it disturbs, the same "the event, not the side
+  effect, is what's universal" reasoning `cdssLabPlanner.ts`'s own
+  version already relies on.
+- **`SchedulingDischargeSignal` gained `patientId` for the identical
+  reason `LabDischargeSignal` and `BedNeedSignal` did.** The
+  cancellation rule itself never reads it; only
+  `suggestVitalsEntryPanel` does.
+- **What this still doesn't do: an Agent-selected UI component for
+  ledger, imaging, or nursing.** Three domains in a row (bed, lab,
+  scheduling) finding a genuine fit is still not evidence the remaining
+  three will — ledger's reversal, imaging's cancellation, and nursing's
+  revocation are each their own real-world event, and pharmacy's
+  decline already proved this pattern doesn't generalize
+  automatically. Each remains an open question to check on its own
+  terms, not to assume either way.

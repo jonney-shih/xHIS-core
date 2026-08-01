@@ -19,7 +19,7 @@ import { createInMemoryShell } from '../../../src/agentic/shell/inMemoryShell.js
 import { createFileSchedulerActedStore, runScheduler } from '../../../src/agentic/shell/scheduler.js';
 import { createFileOutboxCursor } from '../../../src/core/io/outboxCursor.js';
 import { isoTimestamp } from '../../../src/core/temporal.js';
-import { encounterId } from '../../../src/instructions/patient/ids.js';
+import { encounterId, patientId } from '../../../src/instructions/patient/ids.js';
 import { schedulingEngine } from '../../../src/instructions/scheduling/engine.js';
 import { bookingId, resourceId } from '../../../src/instructions/scheduling/ids.js';
 import type { SchedulingContext, SchedulingEffect, SchedulingInstruction } from '../../../src/instructions/scheduling/types.js';
@@ -87,7 +87,7 @@ async function verifyWithAllSchedulingWorkers(
  */
 describe('a CDSS-sourced scheduling proposal, Checked through the verification spine, reaches the same decision schedulingVerifier already reaches inline', () => {
   it('needs human approval for a CDSS-recommended CancelBooking exactly like schedulingVerifier does, and the scheduler correctly leaves it awaiting-approval', async () => {
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     // Explicit type arguments: same mapped-type inference limitation
     // `createEngine` call sites already document (see
     // `scheduling/engine.ts`).
@@ -138,7 +138,7 @@ describe('a CDSS-sourced scheduling proposal, Checked through the verification s
   });
 
   it('a human approving afterward still commits, via the exact same mechanism the direct pipeline already uses', async () => {
-    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1') };
+    const signal: SchedulingDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planResult = await planWithRetries<CdssSchedulingContext, SchedulingInstruction>(
       createCdssSchedulingPlanner(),
       schedulingInstructionValidators,

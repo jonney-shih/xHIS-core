@@ -1,7 +1,9 @@
 import { ok, type Result } from '../../core/execution/result.js';
 import { findPendingBookingsForEncounter } from '../../integration/schedulingLookup.js';
-import type { EncounterId } from '../../instructions/patient/ids.js';
+import type { EncounterId, PatientId } from '../../instructions/patient/ids.js';
 import type { SchedulingContext } from '../../instructions/scheduling/types.js';
+import type { PatientVitalsUiComponent } from '../ui/patient.js';
+import type { RawUiRenderOutput } from '../ui/toUiRenderProposal.js';
 import type { PlanningGoal } from './proposal.js';
 import type { RawPlanner, RawPlanOutput } from './toPlanProposal.js';
 
@@ -16,9 +18,16 @@ import type { RawPlanner, RawPlanOutput } from './toPlanProposal.js';
  * instruction, never implied by admission, so a triage-shaped signal
  * here would invent the same kind of judgment `cdssLabPlanner.ts`
  * already declined to invent for lab.
+ *
+ * Carries `patientId` alongside `encounterId` for the identical reason
+ * `LabDischargeSignal` gained one: `plan`'s rule below never reads it (a
+ * discharge is resolved purely by encounter), but
+ * `suggestVitalsEntryPanel` does — a genuine discharge signal was
+ * always going to know which patient it's for.
  */
 export interface SchedulingDischargeSignal {
   readonly encounterId: EncounterId;
+  readonly patientId: PatientId;
 }
 
 /** Same "bundle what informs planning, not ambient state" reasoning
@@ -102,5 +111,39 @@ export function createCdssSchedulingPlanner(): RawPlanner<CdssSchedulingContext>
         promptVersion: 'scheduling-cancellation-ruleset-v1',
       });
     },
+  };
+}
+
+/**
+ * Scheduling's own counterpart to `cdssLabPlanner.ts`'s
+ * `suggestVitalsEntryPanel` — the same "discharge vitals" real-world
+ * justification, not a fresh clinical judgment call. Scheduling's own
+ * `SchedulingDischargeSignal` represents the *identical* real-world
+ * event lab's `LabDischargeSignal` does — a patient discharge — the
+ * same event `patientToScheduling.ts`'s own doc comment already
+ * confirms "recurs" for scheduling for the identical reason it does for
+ * lab and imaging. Unlike pharmacy's declined dispense-event suggestion
+ * (see `docs/DETERMINISTIC_CORE_PATTERN.md`'s own section on why that
+ * one was skipped), there is no per-instance judgment needed here: a
+ * discharge is a discharge, regardless of which bookings it happens to
+ * cancel, the same "the suggestion is tied to the event, not to
+ * whether the domain's own rule found anything to act on" reasoning
+ * `cdssLabPlanner.ts`'s own version already establishes.
+ *
+ * Returns the *raw*, still-untrusted shape `toUiRenderProposal` expects
+ * — the fourth real caller of the identical `VitalsEntryPanel`
+ * component, proving the same validation-gate claim again.
+ */
+export function suggestVitalsEntryPanel(signal: SchedulingDischargeSignal): RawUiRenderOutput {
+  const component: PatientVitalsUiComponent = {
+    component: 'VitalsEntryPanel',
+    props: { encounterId: signal.encounterId, patientId: signal.patientId },
+  };
+
+  return {
+    component,
+    rationale: 'CDSS scheduling rule: suggesting discharge vitals entry for a newly recommended booking cancellation',
+    modelVersion: 'cdss-scheduling-cancellation-rule-engine-v1',
+    promptVersion: 'scheduling-cancellation-ruleset-v1',
   };
 }
