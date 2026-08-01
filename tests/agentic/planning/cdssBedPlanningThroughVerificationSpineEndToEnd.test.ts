@@ -22,6 +22,7 @@ import { isoTimestamp } from '../../../src/core/temporal.js';
 import { EXAMPLE_firstAvailableBedStrategy } from '../../../src/integration/bedSelection.js';
 import { bedEngine } from '../../../src/instructions/bed/engine.js';
 import { bedId, encounterId } from '../../../src/instructions/bed/ids.js';
+import { patientId } from '../../../src/instructions/patient/ids.js';
 import type { BedContext, BedEffect, BedInstruction } from '../../../src/instructions/bed/types.js';
 
 const contextWithAvailableBed: BedContext = { beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } } };
@@ -76,7 +77,7 @@ async function verifyWithAllBedWorkers(
  */
 describe('a CDSS-sourced bed proposal, Checked through the verification spine, reaches the same decision bedVerifier already reaches inline', () => {
   it('needs human approval for a CDSS-recommended AssignBed exactly like bedVerifier does, and the scheduler correctly leaves it awaiting-approval', async () => {
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     // Explicit type arguments: same mapped-type inference limitation
     // `createEngine` call sites already document (see `bed/engine.ts`).
     const planResult = await planWithRetries<CdssBedContext, BedInstruction>(
@@ -122,7 +123,7 @@ describe('a CDSS-sourced bed proposal, Checked through the verification spine, r
   });
 
   it('a human approving afterward still commits, via the exact same mechanism the direct pipeline already uses', async () => {
-    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1') };
+    const signal: BedNeedSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const planResult = await planWithRetries<CdssBedContext, BedInstruction>(
       createCdssBedPlanner(),
       bedInstructionValidators,
