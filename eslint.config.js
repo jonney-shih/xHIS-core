@@ -3,14 +3,14 @@ import { noCommitWithoutFreshRead } from './eslint-rules/no-commit-without-fresh
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['**/dist/**', '**/node_modules/**'],
   },
   {
-    files: ['src/**/*.ts'],
+    files: ['packages/*/src/**/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
-        project: './tsconfig.json',
+        project: ['packages/*/tsconfig.json'],
         tsconfigRootDir: process.cwd(),
       },
     },

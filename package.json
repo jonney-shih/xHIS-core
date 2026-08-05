@@ -1,15 +1,18 @@
 {
-  "name": "xhis-core",
+  "name": "xhis-core-monorepo",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "xHIS-core: static execution core for the extensible Hospital Information System",
+  "description": "xHIS-core workspace root: the deterministic execution core (packages/xhis-core) and its sibling packages",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
-    "test": "vitest run",
-    "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "test": "npm run test --workspaces --if-present",
+    "benchmark": "npm run benchmark --workspaces --if-present",
     "prepare": "husky"
   },
   "devDependencies": {
