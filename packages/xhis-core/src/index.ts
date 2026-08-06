@@ -1,24 +1,25 @@
 /**
- * `@xhis/core`'s public export surface — the *only* seam a package
- * outside this one (starting with `@xhis/xguard`, see
- * `docs/XGUARD_INTEGRATION.md`) is ever allowed to import from. See
- * `CLAUDE.md`'s guardrails and
- * `packages/xguard/tests/architecture/coreBoundary.guard.test.ts` for
- * the CI-enforced side of that rule: a deep import like
+ * `@xhis/core`'s public export surface — the *only* seam any sibling
+ * package in this workspace is ever allowed to import from. See
+ * `CLAUDE.md`'s guardrails (the Deterministic Foundation/domain-split
+ * boundary) and each sibling package's own `coreBoundary.guard.test.ts`
+ * for the CI-enforced side of that rule: a deep import like
  * `@xhis/core/dist/agentic/shell/act.js` is exactly what this file
  * exists to make unnecessary, so it can be banned outright rather than
- * merely discouraged.
+ * merely discouraged. This module intentionally names no specific
+ * consumer — see `docs/` for how the first real sibling package
+ * actually uses this surface.
  *
  * Deliberately not "everything under `src/`" — this repository's own
  * clinical domains (`instructions/bed`, `agentic/risk/lab`, ...) are
  * real, working examples of the *pattern* a new domain follows, not
  * reusable library code a new domain imports from. What a new,
- * non-clinical domain (like `@xhis/xguard`'s `ops` domain) actually
- * needs to reuse is the domain-*agnostic* machinery underneath every
- * one of those examples: the execution engine, the Result/outcome
- * shapes, the risk-tier/verifier/approval-policy primitives, the
- * `ImperativeShell` seam, and the telemetry hook. That is exactly what
- * this file re-exports, grouped the same way `src/` itself is grouped.
+ * non-clinical, operational domain actually needs to reuse is the
+ * domain-*agnostic* machinery underneath every one of those examples:
+ * the execution engine, the Result/outcome shapes, the risk-tier/
+ * verifier/approval-policy primitives, the `ImperativeShell` seam, and
+ * the telemetry hook. That is exactly what this file re-exports,
+ * grouped the same way `src/` itself is grouped.
  */
 
 // core/execution — the deterministic dispatch machinery every domain's

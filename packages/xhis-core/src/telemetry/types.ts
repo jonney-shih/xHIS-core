@@ -7,8 +7,8 @@ import type { IsoTimestamp } from '../core/temporal.js';
  * decision on one clinical/business proposal; these events are signals
  * about the *running system itself* (a sandbox that stopped responding,
  * a handler that crashed, two commits racing) meant for an operational
- * consumer — this repository's own future `@xhis/xguard` package, or any
- * other self-healing/observability listener — not for a clinical audit
+ * consumer — a future sibling package built for self-healing/
+ * observability, or any other such listener — not for a clinical audit
  * trail. Same "`kind` stays a literal string per variant, never widened"
  * discipline every other closed union in this codebase already follows
  * (see `core/execution/kinded.ts`).
@@ -16,8 +16,8 @@ import type { IsoTimestamp } from '../core/temporal.js';
  * `domain` is a free-form string, not a closed union of this repo's own
  * clinical domain names — this module lives in the domain-agnostic core
  * (see `CLAUDE.md`'s guardrails) and must stay usable by any future
- * domain, including a non-clinical one like `@xhis/xguard`'s own `ops`
- * domain, without ever needing to change shape. Same reasoning
+ * domain, including a non-clinical, operational one, without ever
+ * needing to change shape. Same reasoning
  * `agentic/identity/identity.ts`'s `Identity.roles` doc comment gives for
  * staying a free-form string set instead of inventing a permission
  * taxonomy ahead of a real need.

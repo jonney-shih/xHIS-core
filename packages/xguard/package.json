@@ -1,0 +1,26 @@
+{
+  "name": "@xhis/xguard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "xHIS-xguard: the operational/production agentic domain (K8s sandbox lifecycle, telemetry-driven self-healing) built only on @xhis/core's public export surface",
+  "dependencies": {
+    "@xhis/core": "^0.1.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "npm run build --workspace=@xhis/core",
+    "build": "tsc",
+    "pretypecheck": "npm run build --workspace=@xhis/core",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
+    "pretest": "npm run build --workspace=@xhis/core",
+    "test": "vitest run"
+  }
+}
