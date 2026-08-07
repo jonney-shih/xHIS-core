@@ -8,13 +8,20 @@ import type { ContainerId, DeploymentId, IsoTimestamp, NodeId, SandboxId } from 
  * a literal string per variant; this stays a `type`, never an
  * `interface` (see `Kinded`'s own doc comment for why).
  *
- * `ReprovisionSandbox` is the one variant with a fully working path end
- * to end (see `agentic/planning/opsPlanner.ts`, `agentic/shell/opsShell.ts`,
- * and `tests/integration/sandboxTimeoutRemediation.test.ts`).
- * `CordonNode`/`RestartContainer`/`ScaleDeployment` are typed,
- * risk-tiered, and validated the same way, but have no planner rule or
- * real remediation logic behind them yet — seams for a follow-up, not
- * gaps in this slice (see docs/XGUARD_INTEGRATION.md).
+ * `ReprovisionSandbox` and `CordonNode` each have a fully working
+ * *decision* path end to end — telemetry event through Plan -> Check ->
+ * human approval (where the tier requires one) -> `Act` (see
+ * `agentic/planning/opsPlanner.ts`, `tests/integration/
+ * sandboxTimeoutRemediation.test.ts`, and `tests/integration/
+ * nodeUnhealthyRemediation.test.ts`). Neither has a real remediation
+ * *action* behind its committed effect yet in the same sense: `commit()`
+ * forwards `SandboxReprovisioned` to a real (if in-memory-backed)
+ * `SandboxProvisioner`, but `NodeCordoned` is still only recorded, not
+ * forwarded anywhere — see `agentic/shell/opsShell.ts`'s own doc
+ * comment. `RestartContainer`/`ScaleDeployment` are typed, risk-tiered,
+ * and validated the same way, but have no planner rule mapped to them
+ * at all yet — seams for a follow-up, not gaps in this slice (see
+ * docs/XGUARD_INTEGRATION.md).
  */
 export type OpsInstruction =
   | {

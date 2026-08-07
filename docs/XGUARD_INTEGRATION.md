@@ -65,7 +65,7 @@ other `*.guard.test.ts` in this codebase already follows). See
 possible: `telemetry/hook.ts`'s `TelemetryHook` (`emit`/`subscribe`, no
 `EventEmitter`, no dependencies) and `telemetry/types.ts`'s
 `TelemetryEvent` union (`SandboxTimeoutEvent`, `HandlerExceptionEvent`,
-`CommitConflictEvent`). This is how a domain-agnostic core can report
+`CommitConflictEvent`, `NodeUnhealthyEvent`). This is how a domain-agnostic core can report
 "something operationally interesting just happened" without knowing
 who, if anyone, is listening, and without becoming aware that
 `@xhis/xguard` — or anything else — exists.
@@ -111,29 +111,44 @@ to a new closed instruction union, `OpsInstruction`
 | Rule-based planner | `agentic/planning/cdssBedPlanner.ts` | `agentic/planning/opsPlanner.ts` |
 | `ImperativeShell` | `agentic/shell/inMemoryShell.ts` (generic) | `agentic/shell/opsShell.ts` (`OpsShell`, K8s-lifecycle-specific) |
 
-The one fully working, end-to-end path (see
-`tests/integration/sandboxTimeoutRemediation.test.ts`) is: a
-`SandboxTimeoutEvent`, emitted on `@xhis/core`'s telemetry hook, is
-forwarded to `opsPlanner.ts`'s rule-based planner, which proposes a
-`ReprovisionSandbox` instruction; that raw, still-untrusted candidate
-passes through `agentic/validation/ops.ts`'s gate the same way any
-LLM's raw JSON would have to; `agentic/verification/ops.ts`'s Check
-accepts it at the `'auto'` risk tier (reprovisioning one sandbox is
-reversible and single-resource-scoped, the same "consequence, not
-mechanism, drives the tier" reasoning every clinical risk tier already
-uses); and `@xhis/core`'s own `act()` commits it through `OpsShell`,
-whose `commit()` calls the (for now, in-memory) `SandboxProvisioner`
-and records an audit entry correlated back to the sandbox the
-triggering event named.
+Two fully working, end-to-end *decision* paths exist today:
 
-`CordonNode`, `RestartContainer`, and `ScaleDeployment` are typed,
-risk-tiered (`'auto'`/`'approval-required'`/`'review-required'`
-respectively), and validated the same way — but have no planner rule
-mapped to them yet, and their handlers are unconditional pass-throughs
-with a `// TODO: real K8s-backed implementation` marker. That's
-deliberate scoping for this slice, not an oversight: the point was to
-prove the whole pipeline end to end for one concrete case, not to
-pre-build remediation logic for events this system doesn't emit yet.
+1. (see `tests/integration/sandboxTimeoutRemediation.test.ts`) a
+   `SandboxTimeoutEvent`, emitted on `@xhis/core`'s telemetry hook, is
+   forwarded to `opsPlanner.ts`'s rule-based planner, which proposes a
+   `ReprovisionSandbox` instruction; that raw, still-untrusted candidate
+   passes through `agentic/validation/ops.ts`'s gate the same way any
+   LLM's raw JSON would have to; `agentic/verification/ops.ts`'s Check
+   accepts it at the `'auto'` risk tier (reprovisioning one sandbox is
+   reversible and single-resource-scoped, the same "consequence, not
+   mechanism, drives the tier" reasoning every clinical risk tier already
+   uses); and `@xhis/core`'s own `act()` commits it through `OpsShell`,
+   whose `commit()` calls the (for now, in-memory) `SandboxProvisioner`
+   and records an audit entry correlated back to the sandbox the
+   triggering event named.
+2. (see `tests/integration/nodeUnhealthyRemediation.test.ts`) a
+   `NodeUnhealthyEvent` (a sustained `DiskPressure`/`MemoryPressure`/
+   `PIDPressure` condition — the real conditions a kubelet reports, not
+   an invented taxonomy) is forwarded the same way to `opsPlanner.ts`,
+   which proposes `CordonNode`; Check places it at the top,
+   `'approval-required'` tier (taking a whole node out of the
+   schedulable pool has the highest blast radius of the four
+   `OpsInstruction` variants); a permitted identity
+   (`'sre-lead'`/`'platform-lead'`, see `policy/approvalPolicy.ts`)
+   approves it; and `act()` commits it through `OpsShell` — which
+   records the `NodeCordoned` effect and its audit entry, but does
+   **not** forward it to any real action yet (see "What's deferred"
+   below). This path proves the recommendation reaches a human
+   correctly, not that cordoning is real.
+
+`RestartContainer` and `ScaleDeployment` are typed, risk-tiered
+(`'auto'`/`'review-required'` respectively), and validated the same way
+as `CordonNode` — but have no planner rule mapped to them yet, and
+their handlers are unconditional pass-throughs with a `// TODO: real
+K8s-backed implementation` marker. That's deliberate scoping for this
+slice, not an oversight: the point was to prove the decision pipeline
+end to end for two concrete cases, not to pre-build remediation logic
+for events this system doesn't emit yet.
 
 ## What's deferred to a follow-up
 
@@ -155,6 +170,14 @@ of it is explicitly out of scope for this integration:
 - **Resource-limit enforcement.** No cap on concurrently-provisioned
   sandboxes, no per-sandbox CPU/memory quota. A real provisioner
   implementation is where this would need to live.
+- **A real, K8s-backed node-cordon action.** `CordonNode` now has a
+  working decision path (see above), but `instructions/handlers/
+  cordonNode.ts` and `agentic/shell/opsShell.ts`'s `commit()` both still
+  only record the `NodeCordoned` effect — neither calls any real
+  cluster API (e.g. marking a `Node` unschedulable via
+  `@kubernetes/client-node`). Deferred behind the same seam
+  `SandboxProvisioner` already models for reprovisioning, once a
+  concrete node-lifecycle interface is worth introducing for it.
 - **Remediation rules for `HandlerExceptionEvent`/`CommitConflictEvent`.**
   `opsPlanner.ts` explicitly does not map either to any `OpsInstruction`
   yet — both are domain-agnostic core signals ("some proposal failed to

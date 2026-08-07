@@ -98,6 +98,7 @@ export {
 export type {
   CommitConflictEvent,
   HandlerExceptionEvent,
+  NodeUnhealthyEvent,
   SandboxTimeoutEvent,
   TelemetryEvent,
 } from './telemetry/types.js';
