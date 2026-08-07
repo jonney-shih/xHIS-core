@@ -1,11 +1,29 @@
+import { isoTimestamp } from '../../core/temporal.js';
 import type { SequenceFailure } from '../../core/execution/engine.js';
 import type { Kinded } from '../../core/execution/kinded.js';
 import type { ExecutionOutcome } from '../../core/execution/outcome.js';
 import type { Result } from '../../core/execution/result.js';
+import { telemetry } from '../../telemetry/hook.js';
 import type { PlanProposal } from '../planning/proposal.js';
 import type { VerifyDecision } from '../verification/verifier.js';
 import type { Approval, CommitOutcome } from './auditRecord.js';
 import type { ImperativeShell } from './shell.js';
+
+/**
+ * Optional tag identifying which domain/proposal this `act()` call is
+ * for, used only to label the `HandlerException`/`CommitConflict`
+ * telemetry below — see `core/execution/engine.ts`'s own
+ * `HandlerExceptionTelemetryContext` doc comment for why this is
+ * optional and caller-supplied rather than inferred: `TInstruction`
+ * only guarantees a `kind` per `Kinded`, never a domain name, and
+ * `PlanProposal` has no correlation ID of its own. Omitting this (every
+ * call site that predates telemetry) emits nothing — additive, not a
+ * behavior change.
+ */
+export interface ActTelemetryTag {
+  readonly domain: string;
+  readonly correlationId: string;
+}
 
 export interface ActInput<TCtx, TInstruction extends Kinded, TEffect, TError> {
   readonly proposal: PlanProposal<TInstruction>;
@@ -38,6 +56,9 @@ export interface ActInput<TCtx, TInstruction extends Kinded, TEffect, TError> {
    */
   readonly approval?: Approval;
   readonly recordedAt: string;
+  /** See `ActTelemetryTag`'s own doc comment. Optional; omitting it
+   * emits no telemetry at all. */
+  readonly telemetryTag?: ActTelemetryTag;
 }
 
 /**
@@ -64,7 +85,7 @@ export function act<TCtx, TInstruction extends Kinded, TEffect, TError>(
   shell: ImperativeShell<TCtx, TInstruction, TEffect>,
   input: ActInput<TCtx, TInstruction, TEffect, TError>,
 ): CommitOutcome {
-  const { proposal, doOutcome, decision, baselineContext, reexecute, approval, recordedAt } = input;
+  const { proposal, doOutcome, decision, baselineContext, reexecute, approval, recordedAt, telemetryTag } = input;
 
   const finalize = (
     commitOutcome: CommitOutcome,
@@ -91,16 +112,49 @@ export function act<TCtx, TInstruction extends Kinded, TEffect, TError>(
     const freshOutcome = reexecute(latest);
 
     if (!freshOutcome.ok) {
-      return finalize('stale', [
+      const reasons = [
         `re-validation against the latest committed state failed at instruction ${freshOutcome.error.failedAtIndex} — the world changed since this proposal was verified; re-propose`,
-      ]);
+      ];
+      // The race `tests/agentic/shell/actStaleCommitRace.test.ts` proves
+      // this closes: something else committed between this proposal's
+      // original Do and this commit-time re-check. Reported as
+      // `CommitConflict`, not `HandlerException` — nothing threw, and
+      // nothing about either instruction sequence is wrong in
+      // isolation; only their arrival order conflicted.
+      if (telemetryTag) {
+        telemetry.emit({
+          kind: 'CommitConflict',
+          domain: telemetryTag.domain,
+          correlationId: telemetryTag.correlationId,
+          recordedAt: isoTimestamp(recordedAt),
+          reasons,
+        });
+      }
+      return finalize('stale', reasons);
     }
 
     return finalize('committed', [], freshOutcome.value);
   };
 
   if (!doOutcome.ok) {
-    return finalize('rejected', [`dry run failed at instruction ${doOutcome.error.failedAtIndex}`]);
+    const reasons = [`dry run failed at instruction ${doOutcome.error.failedAtIndex}`];
+    // Distinct from `core/execution/engine.ts`'s own `HandlerException`
+    // telemetry (a handler that *threw*): this is Do's well-typed `err`
+    // path — `doOutcome` already failed before `act()` was even called
+    // — reported here as the same event kind anyway, since both
+    // describe "this instruction sequence could not be executed against
+    // its context" from an operator's point of view, just discovered at
+    // a different layer.
+    if (telemetryTag) {
+      telemetry.emit({
+        kind: 'HandlerException',
+        domain: telemetryTag.domain,
+        correlationId: telemetryTag.correlationId,
+        recordedAt: isoTimestamp(recordedAt),
+        message: reasons[0]!,
+      });
+    }
+    return finalize('rejected', reasons);
   }
 
   switch (decision.kind) {
