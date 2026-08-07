@@ -21,12 +21,24 @@ export interface OpsRemediationContext {
 }
 
 /**
- * The one concrete, end-to-end rule implemented in this slice:
- * `SandboxTimeout` -> `ReprovisionSandbox`, one-for-one, using the
- * event's own `correlationId` as the sandbox to reprovision (see
- * `telemetry/opsTelemetryListener.ts` and
- * `SandboxTimeoutEvent`'s own doc comment in `@xhis/core` for why that
- * correlation holds).
+ * Two concrete, end-to-end rules implemented in this slice, both
+ * one-for-one against the event's own `correlationId`:
+ *
+ * - `SandboxTimeout` -> `ReprovisionSandbox`, using `correlationId` as
+ *   the sandbox to reprovision (see `telemetry/opsTelemetryListener.ts`
+ *   and `SandboxTimeoutEvent`'s own doc comment in `@xhis/core` for why
+ *   that correlation holds).
+ * - `NodeUnhealthy` -> `CordonNode`, using `correlationId` as the node
+ *   to cordon. This planner does not re-evaluate `sustainedForMs`
+ *   against any threshold of its own — the event's own existence is
+ *   already the cordon-worthy signal, the identical division of
+ *   responsibility `SandboxTimeoutEvent`'s consumption above already
+ *   relies on (see `NodeUnhealthyEvent`'s own doc comment in
+ *   `@xhis/core`). Note this rule proposes the recommendation and gets
+ *   it through Plan -> Check -> human approval correctly — it does not
+ *   make cordoning *real*; `instructions/handlers/cordonNode.ts` and
+ *   `agentic/shell/opsShell.ts` are still stubs for the actual
+ *   K8s-backed action (see docs/XGUARD_INTEGRATION.md).
  *
  * `HandlerException`/`CommitConflict` are deliberately *not* mapped to
  * any remediation instruction yet — both are domain-agnostic core
@@ -52,6 +64,13 @@ export function createOpsPlanner(): RawPlanner<OpsRemediationContext> {
             instructions.push({
               kind: 'ReprovisionSandbox',
               sandboxId: event.correlationId,
+              requestedAt: proposedAt,
+            });
+            break;
+          case 'NodeUnhealthy':
+            instructions.push({
+              kind: 'CordonNode',
+              nodeId: event.correlationId,
               requestedAt: proposedAt,
             });
             break;

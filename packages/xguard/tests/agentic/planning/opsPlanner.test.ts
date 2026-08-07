@@ -19,6 +19,15 @@ const handlerException: TelemetryEvent = {
   message: 'boom',
 };
 
+const nodeUnhealthy: TelemetryEvent = {
+  kind: 'NodeUnhealthy',
+  domain: 'ops',
+  correlationId: 'node-7',
+  recordedAt: isoTimestamp('2026-08-01T00:00:00.000Z'),
+  pressure: 'MemoryPressure',
+  sustainedForMs: 120_000,
+};
+
 describe('ops planner', () => {
   it('maps a SandboxTimeout event to a raw ReprovisionSandbox candidate', async () => {
     const planner = createOpsPlanner();
@@ -34,6 +43,23 @@ describe('ops planner', () => {
     if (!result.ok) throw new Error('expected ok');
     expect(result.value.instructions).toEqual([
       { kind: 'ReprovisionSandbox', sandboxId: 'sandbox-1', requestedAt: '2026-08-01T00:00:01.000Z' },
+    ]);
+  });
+
+  it('maps a NodeUnhealthy event to a raw CordonNode candidate, regardless of how long the pressure was sustained', async () => {
+    const planner = createOpsPlanner();
+
+    const result = await planner.plan(
+      { description: 'self-heal from telemetry' },
+      { events: [nodeUnhealthy] },
+      '2026-08-01T00:00:01.000Z',
+      [],
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.instructions).toEqual([
+      { kind: 'CordonNode', nodeId: 'node-7', requestedAt: '2026-08-01T00:00:01.000Z' },
     ]);
   });
 
@@ -57,14 +83,16 @@ describe('ops planner', () => {
 
     const result = await planner.plan(
       { description: 'self-heal from telemetry' },
-      { events: [handlerException, sandboxTimeout] },
+      { events: [handlerException, sandboxTimeout, nodeUnhealthy] },
       '2026-08-01T00:00:01.000Z',
       [],
     );
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.instructions).toHaveLength(1);
-    expect(result.value.instructions[0]).toMatchObject({ kind: 'ReprovisionSandbox', sandboxId: 'sandbox-1' });
+    expect(result.value.instructions).toEqual([
+      { kind: 'ReprovisionSandbox', sandboxId: 'sandbox-1', requestedAt: '2026-08-01T00:00:01.000Z' },
+      { kind: 'CordonNode', nodeId: 'node-7', requestedAt: '2026-08-01T00:00:01.000Z' },
+    ]);
   });
 });

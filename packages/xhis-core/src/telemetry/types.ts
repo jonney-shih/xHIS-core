@@ -69,4 +69,30 @@ export interface CommitConflictEvent {
   readonly reasons: readonly string[];
 }
 
-export type TelemetryEvent = SandboxTimeoutEvent | HandlerExceptionEvent | CommitConflictEvent;
+/**
+ * A sustained node-level resource-pressure condition — the same three
+ * conditions a real kubelet reports on a Node's own `.status.conditions`
+ * (`DiskPressure`/`MemoryPressure`/`PIDPressure`), not an invented
+ * taxonomy. This event's own existence *is* the "cordon-worthy" signal:
+ * `sustainedForMs` is caller-supplied context for a listener to record
+ * or reason about, not a threshold this module (or anything consuming
+ * it) re-evaluates — the identical division of responsibility
+ * `SandboxTimeoutEvent`'s own doc comment already draws. Whatever real
+ * health-check component eventually emits this is the thing that
+ * decides "sustained long enough to be worth reporting"; nothing
+ * downstream re-derives that decision from the duration alone.
+ */
+export interface NodeUnhealthyEvent {
+  readonly kind: 'NodeUnhealthy';
+  readonly domain: string;
+  readonly correlationId: string;
+  readonly recordedAt: IsoTimestamp;
+  readonly pressure: 'DiskPressure' | 'MemoryPressure' | 'PIDPressure';
+  /** How long the pressure condition had been continuously true when
+   * this event was recorded, in milliseconds — the identical
+   * caller-supplied-duration shape `unresponsiveForMs` above uses, for
+   * the same determinism reason. */
+  readonly sustainedForMs: number;
+}
+
+export type TelemetryEvent = SandboxTimeoutEvent | HandlerExceptionEvent | CommitConflictEvent | NodeUnhealthyEvent;
