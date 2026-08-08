@@ -95,4 +95,33 @@ export interface NodeUnhealthyEvent {
   readonly sustainedForMs: number;
 }
 
-export type TelemetryEvent = SandboxTimeoutEvent | HandlerExceptionEvent | CommitConflictEvent | NodeUnhealthyEvent;
+/**
+ * A container whose liveness probe is failing repeatedly while the
+ * process itself is still running — degraded/hung, not crashed, the
+ * one case a platform's own crash-restart policy does not already
+ * cover on its own. This event's own existence *is* the
+ * "restart-worthy" signal, the identical division of responsibility
+ * `NodeUnhealthyEvent`'s own doc comment already draws:
+ * `consecutiveFailures` is caller-supplied context for a listener to
+ * record or reason about, not a threshold this module (or anything
+ * consuming it) re-evaluates.
+ */
+export interface ContainerUnhealthyEvent {
+  readonly kind: 'ContainerUnhealthy';
+  readonly domain: string;
+  readonly correlationId: string;
+  readonly recordedAt: IsoTimestamp;
+  /** How many consecutive liveness-probe failures had been observed
+   * when this event was recorded — the identical caller-supplied,
+   * non-re-evaluated-downstream shape `sustainedForMs` above uses,
+   * counted rather than timed because a liveness probe's own
+   * failure threshold is naturally a consecutive-failure count. */
+  readonly consecutiveFailures: number;
+}
+
+export type TelemetryEvent =
+  | SandboxTimeoutEvent
+  | HandlerExceptionEvent
+  | CommitConflictEvent
+  | NodeUnhealthyEvent
+  | ContainerUnhealthyEvent;

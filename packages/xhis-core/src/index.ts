@@ -97,6 +97,7 @@ export {
 // tests or for a caller that wants an independent hook instead.
 export type {
   CommitConflictEvent,
+  ContainerUnhealthyEvent,
   HandlerExceptionEvent,
   NodeUnhealthyEvent,
   SandboxTimeoutEvent,

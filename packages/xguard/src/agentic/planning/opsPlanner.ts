@@ -21,7 +21,7 @@ export interface OpsRemediationContext {
 }
 
 /**
- * Two concrete, end-to-end rules implemented in this slice, both
+ * Three concrete, end-to-end rules implemented in this slice, all
  * one-for-one against the event's own `correlationId`:
  *
  * - `SandboxTimeout` -> `ReprovisionSandbox`, using `correlationId` as
@@ -39,6 +39,13 @@ export interface OpsRemediationContext {
  *   make cordoning *real*; `instructions/handlers/cordonNode.ts` and
  *   `agentic/shell/opsShell.ts` are still stubs for the actual
  *   K8s-backed action (see docs/XGUARD_INTEGRATION.md).
+ * - `ContainerUnhealthy` -> `RestartContainer`, using `correlationId` as
+ *   the container to restart, for the identical reason and with the
+ *   identical restraint: `consecutiveFailures` is not re-evaluated
+ *   against any threshold here either (see `ContainerUnhealthyEvent`'s
+ *   own doc comment). Like `CordonNode`, this proposes the
+ *   recommendation correctly — it does not make restarting *real* yet;
+ *   `instructions/handlers/restartContainer.ts` is still a stub.
  *
  * `HandlerException`/`CommitConflict` are deliberately *not* mapped to
  * any remediation instruction yet — both are domain-agnostic core
@@ -71,6 +78,13 @@ export function createOpsPlanner(): RawPlanner<OpsRemediationContext> {
             instructions.push({
               kind: 'CordonNode',
               nodeId: event.correlationId,
+              requestedAt: proposedAt,
+            });
+            break;
+          case 'ContainerUnhealthy':
+            instructions.push({
+              kind: 'RestartContainer',
+              containerId: event.correlationId,
               requestedAt: proposedAt,
             });
             break;

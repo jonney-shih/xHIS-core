@@ -8,20 +8,21 @@ import type { ContainerId, DeploymentId, IsoTimestamp, NodeId, SandboxId } from 
  * a literal string per variant; this stays a `type`, never an
  * `interface` (see `Kinded`'s own doc comment for why).
  *
- * `ReprovisionSandbox` and `CordonNode` each have a fully working
- * *decision* path end to end — telemetry event through Plan -> Check ->
- * human approval (where the tier requires one) -> `Act` (see
- * `agentic/planning/opsPlanner.ts`, `tests/integration/
- * sandboxTimeoutRemediation.test.ts`, and `tests/integration/
- * nodeUnhealthyRemediation.test.ts`). Neither has a real remediation
- * *action* behind its committed effect yet in the same sense: `commit()`
- * forwards `SandboxReprovisioned` to a real (if in-memory-backed)
- * `SandboxProvisioner`, but `NodeCordoned` is still only recorded, not
- * forwarded anywhere — see `agentic/shell/opsShell.ts`'s own doc
- * comment. `RestartContainer`/`ScaleDeployment` are typed, risk-tiered,
- * and validated the same way, but have no planner rule mapped to them
- * at all yet — seams for a follow-up, not gaps in this slice (see
- * docs/XGUARD_INTEGRATION.md).
+ * `ReprovisionSandbox`, `CordonNode`, and `RestartContainer` each have
+ * a fully working *decision* path end to end — telemetry event through
+ * Plan -> Check -> human approval (where the tier requires one) -> `Act`
+ * (see `agentic/planning/opsPlanner.ts`, `tests/integration/
+ * sandboxTimeoutRemediation.test.ts`, `tests/integration/
+ * nodeUnhealthyRemediation.test.ts`, and `tests/integration/
+ * containerUnhealthyRemediation.test.ts`). None of the three has a real
+ * remediation *action* behind its committed effect in the same sense:
+ * `commit()` forwards `SandboxReprovisioned` to a real
+ * (if in-memory-backed) `SandboxProvisioner`, but `NodeCordoned` and
+ * `ContainerRestarted` are still only recorded, not forwarded anywhere
+ * — see `agentic/shell/opsShell.ts`'s own doc comment. `ScaleDeployment`
+ * is typed, risk-tiered, and validated the same way, but has no planner
+ * rule mapped to it at all yet — a seam for a follow-up, not a gap in
+ * this slice (see docs/XGUARD_INTEGRATION.md).
  */
 export type OpsInstruction =
   | {
