@@ -65,7 +65,7 @@ other `*.guard.test.ts` in this codebase already follows). See
 possible: `telemetry/hook.ts`'s `TelemetryHook` (`emit`/`subscribe`, no
 `EventEmitter`, no dependencies) and `telemetry/types.ts`'s
 `TelemetryEvent` union (`SandboxTimeoutEvent`, `HandlerExceptionEvent`,
-`CommitConflictEvent`, `NodeUnhealthyEvent`). This is how a domain-agnostic core can report
+`CommitConflictEvent`, `NodeUnhealthyEvent`, `ContainerUnhealthyEvent`). This is how a domain-agnostic core can report
 "something operationally interesting just happened" without knowing
 who, if anyone, is listening, and without becoming aware that
 `@xhis/xguard` — or anything else — exists.
@@ -111,7 +111,7 @@ to a new closed instruction union, `OpsInstruction`
 | Rule-based planner | `agentic/planning/cdssBedPlanner.ts` | `agentic/planning/opsPlanner.ts` |
 | `ImperativeShell` | `agentic/shell/inMemoryShell.ts` (generic) | `agentic/shell/opsShell.ts` (`OpsShell`, K8s-lifecycle-specific) |
 
-Two fully working, end-to-end *decision* paths exist today:
+Three fully working, end-to-end *decision* paths exist today:
 
 1. (see `tests/integration/sandboxTimeoutRemediation.test.ts`) a
    `SandboxTimeoutEvent`, emitted on `@xhis/core`'s telemetry hook, is
@@ -140,15 +140,25 @@ Two fully working, end-to-end *decision* paths exist today:
    **not** forward it to any real action yet (see "What's deferred"
    below). This path proves the recommendation reaches a human
    correctly, not that cordoning is real.
+3. (see `tests/integration/containerUnhealthyRemediation.test.ts`) a
+   `ContainerUnhealthyEvent` (repeated liveness-probe failures while the
+   process is still running — degraded, not crashed, so the platform's
+   own crash-restart policy hasn't already handled it) is forwarded the
+   same way to `opsPlanner.ts`, which proposes `RestartContainer`; Check
+   accepts it at the `'auto'` tier, the identical "reversible,
+   single-resource-scoped" reasoning `ReprovisionSandbox` gets; and
+   `act()` commits it through `OpsShell`, which records the
+   `ContainerRestarted` effect and its audit entry, but — like
+   `CordonNode` — does **not** forward it to any real action yet.
 
-`RestartContainer` and `ScaleDeployment` are typed, risk-tiered
-(`'auto'`/`'review-required'` respectively), and validated the same way
-as `CordonNode` — but have no planner rule mapped to them yet, and
-their handlers are unconditional pass-throughs with a `// TODO: real
-K8s-backed implementation` marker. That's deliberate scoping for this
-slice, not an oversight: the point was to prove the decision pipeline
-end to end for two concrete cases, not to pre-build remediation logic
-for events this system doesn't emit yet.
+`ScaleDeployment` is typed, risk-tiered (`'review-required'`), and
+validated the same way as the other three — but has no planner rule
+mapped to it yet, and its handler is an unconditional pass-through with
+a `// TODO: real K8s-backed implementation` marker. That's deliberate
+scoping for this slice, not an oversight: the point was to prove the
+decision pipeline end to end for concrete, individually-justified
+cases, not to pre-build remediation logic for events this system
+doesn't emit yet.
 
 ## What's deferred to a follow-up
 
@@ -178,6 +188,12 @@ of it is explicitly out of scope for this integration:
   `@kubernetes/client-node`). Deferred behind the same seam
   `SandboxProvisioner` already models for reprovisioning, once a
   concrete node-lifecycle interface is worth introducing for it.
+- **A real, K8s-backed container-restart action.** Same story as
+  `CordonNode`, now for `RestartContainer`: `instructions/handlers/
+  restartContainer.ts` and `OpsShell.commit()` both only record the
+  `ContainerRestarted` effect — neither calls any real cluster API
+  (e.g. deleting a `Pod` or restarting a container via
+  `@kubernetes/client-node`).
 - **Remediation rules for `HandlerExceptionEvent`/`CommitConflictEvent`.**
   `opsPlanner.ts` explicitly does not map either to any `OpsInstruction`
   yet — both are domain-agnostic core signals ("some proposal failed to

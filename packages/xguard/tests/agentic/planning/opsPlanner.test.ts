@@ -28,6 +28,14 @@ const nodeUnhealthy: TelemetryEvent = {
   sustainedForMs: 120_000,
 };
 
+const containerUnhealthy: TelemetryEvent = {
+  kind: 'ContainerUnhealthy',
+  domain: 'ops',
+  correlationId: 'container-3',
+  recordedAt: isoTimestamp('2026-08-01T00:00:00.000Z'),
+  consecutiveFailures: 5,
+};
+
 describe('ops planner', () => {
   it('maps a SandboxTimeout event to a raw ReprovisionSandbox candidate', async () => {
     const planner = createOpsPlanner();
@@ -63,6 +71,23 @@ describe('ops planner', () => {
     ]);
   });
 
+  it('maps a ContainerUnhealthy event to a raw RestartContainer candidate, regardless of the failure count', async () => {
+    const planner = createOpsPlanner();
+
+    const result = await planner.plan(
+      { description: 'self-heal from telemetry' },
+      { events: [containerUnhealthy] },
+      '2026-08-01T00:00:01.000Z',
+      [],
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.instructions).toEqual([
+      { kind: 'RestartContainer', containerId: 'container-3', requestedAt: '2026-08-01T00:00:01.000Z' },
+    ]);
+  });
+
   it('does not propose anything for event kinds it has no remediation rule for yet', async () => {
     const planner = createOpsPlanner();
 
@@ -83,7 +108,7 @@ describe('ops planner', () => {
 
     const result = await planner.plan(
       { description: 'self-heal from telemetry' },
-      { events: [handlerException, sandboxTimeout, nodeUnhealthy] },
+      { events: [handlerException, sandboxTimeout, nodeUnhealthy, containerUnhealthy] },
       '2026-08-01T00:00:01.000Z',
       [],
     );
@@ -93,6 +118,7 @@ describe('ops planner', () => {
     expect(result.value.instructions).toEqual([
       { kind: 'ReprovisionSandbox', sandboxId: 'sandbox-1', requestedAt: '2026-08-01T00:00:01.000Z' },
       { kind: 'CordonNode', nodeId: 'node-7', requestedAt: '2026-08-01T00:00:01.000Z' },
+      { kind: 'RestartContainer', containerId: 'container-3', requestedAt: '2026-08-01T00:00:01.000Z' },
     ]);
   });
 });
