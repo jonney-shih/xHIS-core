@@ -8,21 +8,23 @@ import type { ContainerId, DeploymentId, IsoTimestamp, NodeId, SandboxId } from 
  * a literal string per variant; this stays a `type`, never an
  * `interface` (see `Kinded`'s own doc comment for why).
  *
- * `ReprovisionSandbox`, `CordonNode`, and `RestartContainer` each have
- * a fully working *decision* path end to end — telemetry event through
- * Plan -> Check -> human approval (where the tier requires one) -> `Act`
- * (see `agentic/planning/opsPlanner.ts`, `tests/integration/
- * sandboxTimeoutRemediation.test.ts`, `tests/integration/
- * nodeUnhealthyRemediation.test.ts`, and `tests/integration/
- * containerUnhealthyRemediation.test.ts`). None of the three has a real
- * remediation *action* behind its committed effect in the same sense:
- * `commit()` forwards `SandboxReprovisioned` to a real
- * (if in-memory-backed) `SandboxProvisioner`, but `NodeCordoned` and
- * `ContainerRestarted` are still only recorded, not forwarded anywhere
- * — see `agentic/shell/opsShell.ts`'s own doc comment. `ScaleDeployment`
- * is typed, risk-tiered, and validated the same way, but has no planner
- * rule mapped to it at all yet — a seam for a follow-up, not a gap in
- * this slice (see docs/XGUARD_INTEGRATION.md).
+ * Every variant now has a fully working *decision* path end to end —
+ * telemetry event through Plan -> Check -> human approval (where the
+ * tier requires one) -> `Act` (see `agentic/planning/opsPlanner.ts`,
+ * `tests/integration/sandboxTimeoutRemediation.test.ts`,
+ * `tests/integration/nodeUnhealthyRemediation.test.ts`,
+ * `tests/integration/containerUnhealthyRemediation.test.ts`, and
+ * `tests/integration/scalingRecommendedRemediation.test.ts`). None has
+ * a real remediation *action* behind its committed effect in the same
+ * sense except `ReprovisionSandbox`: `commit()` forwards
+ * `SandboxReprovisioned` to a real (if in-memory-backed)
+ * `SandboxProvisioner`, but `NodeCordoned`, `ContainerRestarted`, and
+ * `DeploymentScaled` are still only recorded, not forwarded anywhere —
+ * see `agentic/shell/opsShell.ts`'s own doc comment. `ScaleDeployment`
+ * is also the one variant whose planner rule relays a *value*
+ * (`replicas`), not just a target identity — see
+ * `ScalingRecommendedEvent`'s own doc comment in `@xhis/core` for why
+ * that value is never computed here.
  */
 export type OpsInstruction =
   | {

@@ -21,8 +21,9 @@ export interface OpsRemediationContext {
 }
 
 /**
- * Three concrete, end-to-end rules implemented in this slice, all
- * one-for-one against the event's own `correlationId`:
+ * Four concrete, end-to-end rules implemented in this slice — every
+ * `OpsInstruction` variant now has one — all one-for-one against the
+ * event's own `correlationId`:
  *
  * - `SandboxTimeout` -> `ReprovisionSandbox`, using `correlationId` as
  *   the sandbox to reprovision (see `telemetry/opsTelemetryListener.ts`
@@ -46,6 +47,15 @@ export interface OpsRemediationContext {
  *   own doc comment). Like `CordonNode`, this proposes the
  *   recommendation correctly — it does not make restarting *real* yet;
  *   `instructions/handlers/restartContainer.ts` is still a stub.
+ * - `ScalingRecommended` -> `ScaleDeployment`, using `correlationId` as
+ *   the deployment and `targetReplicas` as `replicas` — the one rule in
+ *   this planner that relays a *value*, not just a target identity.
+ *   This function computes no scaling formula of its own; the decision
+ *   of *how many* replicas was already made by whatever real
+ *   recommender emitted the event (see `ScalingRecommendedEvent`'s own
+ *   doc comment). Like `CordonNode`/`RestartContainer`, this proposes
+ *   the recommendation correctly — it does not make scaling *real*;
+ *   `instructions/handlers/scaleDeployment.ts` is still a stub.
  *
  * `HandlerException`/`CommitConflict` are deliberately *not* mapped to
  * any remediation instruction yet — both are domain-agnostic core
@@ -85,6 +95,14 @@ export function createOpsPlanner(): RawPlanner<OpsRemediationContext> {
             instructions.push({
               kind: 'RestartContainer',
               containerId: event.correlationId,
+              requestedAt: proposedAt,
+            });
+            break;
+          case 'ScalingRecommended':
+            instructions.push({
+              kind: 'ScaleDeployment',
+              deploymentId: event.correlationId,
+              replicas: event.targetReplicas,
               requestedAt: proposedAt,
             });
             break;
