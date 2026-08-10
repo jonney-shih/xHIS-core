@@ -36,6 +36,14 @@ const containerUnhealthy: TelemetryEvent = {
   consecutiveFailures: 5,
 };
 
+const scalingRecommended: TelemetryEvent = {
+  kind: 'ScalingRecommended',
+  domain: 'ops',
+  correlationId: 'deployment-checkout',
+  recordedAt: isoTimestamp('2026-08-01T00:00:00.000Z'),
+  targetReplicas: 8,
+};
+
 describe('ops planner', () => {
   it('maps a SandboxTimeout event to a raw ReprovisionSandbox candidate', async () => {
     const planner = createOpsPlanner();
@@ -88,6 +96,23 @@ describe('ops planner', () => {
     ]);
   });
 
+  it('maps a ScalingRecommended event to a raw ScaleDeployment candidate, relaying the target replica count as-is', async () => {
+    const planner = createOpsPlanner();
+
+    const result = await planner.plan(
+      { description: 'self-heal from telemetry' },
+      { events: [scalingRecommended] },
+      '2026-08-01T00:00:01.000Z',
+      [],
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.instructions).toEqual([
+      { kind: 'ScaleDeployment', deploymentId: 'deployment-checkout', replicas: 8, requestedAt: '2026-08-01T00:00:01.000Z' },
+    ]);
+  });
+
   it('does not propose anything for event kinds it has no remediation rule for yet', async () => {
     const planner = createOpsPlanner();
 
@@ -108,7 +133,7 @@ describe('ops planner', () => {
 
     const result = await planner.plan(
       { description: 'self-heal from telemetry' },
-      { events: [handlerException, sandboxTimeout, nodeUnhealthy, containerUnhealthy] },
+      { events: [handlerException, sandboxTimeout, nodeUnhealthy, containerUnhealthy, scalingRecommended] },
       '2026-08-01T00:00:01.000Z',
       [],
     );
@@ -119,6 +144,7 @@ describe('ops planner', () => {
       { kind: 'ReprovisionSandbox', sandboxId: 'sandbox-1', requestedAt: '2026-08-01T00:00:01.000Z' },
       { kind: 'CordonNode', nodeId: 'node-7', requestedAt: '2026-08-01T00:00:01.000Z' },
       { kind: 'RestartContainer', containerId: 'container-3', requestedAt: '2026-08-01T00:00:01.000Z' },
+      { kind: 'ScaleDeployment', deploymentId: 'deployment-checkout', replicas: 8, requestedAt: '2026-08-01T00:00:01.000Z' },
     ]);
   });
 });

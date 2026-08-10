@@ -101,6 +101,7 @@ export type {
   HandlerExceptionEvent,
   NodeUnhealthyEvent,
   SandboxTimeoutEvent,
+  ScalingRecommendedEvent,
   TelemetryEvent,
 } from './telemetry/types.js';
 export { createTelemetryHook, telemetry, type TelemetryHook, type TelemetryListener } from './telemetry/hook.js';

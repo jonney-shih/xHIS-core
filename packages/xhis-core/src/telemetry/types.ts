@@ -119,9 +119,31 @@ export interface ContainerUnhealthyEvent {
   readonly consecutiveFailures: number;
 }
 
+/**
+ * A deployment's target replica count, already decided by an external
+ * recommender (an HPA-like autoscaler, or any other real
+ * capacity-planning component) — unlike every event above, this one
+ * carries a *value*, not just an identity to act on. `targetReplicas`
+ * is that already-made decision, relayed as-is: nothing consuming this
+ * event computes a scaling formula of its own, the identical
+ * "the event's own existence is the signal" restraint every other
+ * event in this union already applies, extended here to the value as
+ * well as the trigger. Whatever real recommender eventually emits this
+ * is the thing that decided the number; nothing downstream re-derives
+ * it from utilization, queue depth, or any other raw metric.
+ */
+export interface ScalingRecommendedEvent {
+  readonly kind: 'ScalingRecommended';
+  readonly domain: string;
+  readonly correlationId: string;
+  readonly recordedAt: IsoTimestamp;
+  readonly targetReplicas: number;
+}
+
 export type TelemetryEvent =
   | SandboxTimeoutEvent
   | HandlerExceptionEvent
   | CommitConflictEvent
   | NodeUnhealthyEvent
-  | ContainerUnhealthyEvent;
+  | ContainerUnhealthyEvent
+  | ScalingRecommendedEvent;

@@ -65,7 +65,8 @@ other `*.guard.test.ts` in this codebase already follows). See
 possible: `telemetry/hook.ts`'s `TelemetryHook` (`emit`/`subscribe`, no
 `EventEmitter`, no dependencies) and `telemetry/types.ts`'s
 `TelemetryEvent` union (`SandboxTimeoutEvent`, `HandlerExceptionEvent`,
-`CommitConflictEvent`, `NodeUnhealthyEvent`, `ContainerUnhealthyEvent`). This is how a domain-agnostic core can report
+`CommitConflictEvent`, `NodeUnhealthyEvent`, `ContainerUnhealthyEvent`,
+`ScalingRecommendedEvent`). This is how a domain-agnostic core can report
 "something operationally interesting just happened" without knowing
 who, if anyone, is listening, and without becoming aware that
 `@xhis/xguard` — or anything else — exists.
@@ -111,7 +112,8 @@ to a new closed instruction union, `OpsInstruction`
 | Rule-based planner | `agentic/planning/cdssBedPlanner.ts` | `agentic/planning/opsPlanner.ts` |
 | `ImperativeShell` | `agentic/shell/inMemoryShell.ts` (generic) | `agentic/shell/opsShell.ts` (`OpsShell`, K8s-lifecycle-specific) |
 
-Three fully working, end-to-end *decision* paths exist today:
+Four fully working, end-to-end *decision* paths exist today — every
+`OpsInstruction` variant now has one:
 
 1. (see `tests/integration/sandboxTimeoutRemediation.test.ts`) a
    `SandboxTimeoutEvent`, emitted on `@xhis/core`'s telemetry hook, is
@@ -150,15 +152,25 @@ Three fully working, end-to-end *decision* paths exist today:
    `act()` commits it through `OpsShell`, which records the
    `ContainerRestarted` effect and its audit entry, but — like
    `CordonNode` — does **not** forward it to any real action yet.
+4. (see `tests/integration/scalingRecommendedRemediation.test.ts`) a
+   `ScalingRecommendedEvent` — a target replica count *already decided*
+   by an external recommender, not computed by this planner — is
+   forwarded the same way to `opsPlanner.ts`, which proposes
+   `ScaleDeployment`, relaying `targetReplicas` into `replicas` as-is;
+   Check places it at `'review-required'` (changing a deployment's
+   replica count affects every pod behind it — worth a second look, but
+   one tier below `CordonNode`'s blast radius); a permitted identity
+   (`'sre-oncall'`, see `policy/approvalPolicy.ts`) approves it; and
+   `act()` commits it through `OpsShell`, which records the
+   `DeploymentScaled` effect and its audit entry, but — like the two
+   paths above — does **not** forward it to any real action yet.
 
-`ScaleDeployment` is typed, risk-tiered (`'review-required'`), and
-validated the same way as the other three — but has no planner rule
-mapped to it yet, and its handler is an unconditional pass-through with
-a `// TODO: real K8s-backed implementation` marker. That's deliberate
-scoping for this slice, not an oversight: the point was to prove the
-decision pipeline end to end for concrete, individually-justified
-cases, not to pre-build remediation logic for events this system
-doesn't emit yet.
+Every `OpsInstruction` variant has a planner rule now — that closes the
+"typed but unmapped" gap this section used to describe. What none of
+the four have yet is described below, not silently: only
+`ReprovisionSandbox`'s committed effect reaches a real (if
+in-memory-backed) action; the other three still only record their
+effect.
 
 ## What's deferred to a follow-up
 
@@ -194,6 +206,20 @@ of it is explicitly out of scope for this integration:
   `ContainerRestarted` effect — neither calls any real cluster API
   (e.g. deleting a `Pod` or restarting a container via
   `@kubernetes/client-node`).
+- **A real, K8s-backed deployment-scale action.** Same story again, now
+  for `ScaleDeployment`: `instructions/handlers/scaleDeployment.ts` and
+  `OpsShell.commit()` both only record the `DeploymentScaled` effect —
+  neither calls any real cluster API (e.g. patching a `Deployment`'s
+  `spec.replicas` via `@kubernetes/client-node`).
+- **A real external scaling recommender.** `ScalingRecommendedEvent`
+  assumes something else (an HPA-like autoscaler, a custom
+  capacity-planning service) already decided the target replica count;
+  nothing in this workspace computes that number from real metrics
+  (CPU/memory utilization, queue depth, request latency) yet. Building
+  one is explicitly out of scope here — it is a scaling *policy*, the
+  same kind of invented-business-logic decision this codebase's own
+  history (see `docs/DETERMINISTIC_CORE_PATTERN.md`) never makes up
+  ahead of a real, stated need.
 - **Remediation rules for `HandlerExceptionEvent`/`CommitConflictEvent`.**
   `opsPlanner.ts` explicitly does not map either to any `OpsInstruction`
   yet — both are domain-agnostic core signals ("some proposal failed to
