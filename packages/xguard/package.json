@@ -5,7 +5,8 @@
   "type": "module",
   "description": "xHIS-xguard: the operational/production agentic domain (K8s sandbox lifecycle, telemetry-driven self-healing) built only on @xhis/core's public export surface",
   "dependencies": {
-    "@xhis/core": "^0.1.0"
+    "@xhis/core": "^0.1.0",
+    "zod": "^3.23.8"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
