@@ -26,6 +26,14 @@ export { opsInstructionValidators } from './agentic/validation/ops.js';
 export { createBlastRadiusPlaceholderVerifier, opsVerifier } from './agentic/verification/ops.js';
 export { createOpsPlanner, type OpsRemediationContext } from './agentic/planning/opsPlanner.js';
 export { createOpsShell, type OpsCommittedBatch } from './agentic/shell/opsShell.js';
+export { createShadowOpsShell } from './agentic/shell/shadowOpsShell.js';
+export {
+  assertRecordableEffect,
+  checkShadowRunSafety,
+  validateShadowRunPayload,
+  type HarnessViolation,
+  type IndexedShadowValidationIssues,
+} from './agentic/shell/harnessContract.js';
 
 export type { SandboxProvisioner, SandboxStatus } from './sandbox/provisioner.js';
 export { createInMemorySandboxProvisioner } from './sandbox/inMemorySandboxProvisioner.js';

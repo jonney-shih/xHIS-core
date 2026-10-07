@@ -232,3 +232,86 @@ of it is explicitly out of scope for this integration:
   accepts unconditionally today; a real implementation needs actual
   cluster state (how many pods/nodes a `ScaleDeployment`/`CordonNode`
   would affect) that nothing in this package computes yet.
+
+## Shadow mode: a seam toward a real physical-site pilot
+
+Before any of this runs against a real cluster, there is a cheaper way
+to find out whether the risk-tiering and approval logic hold up
+against real-world signal noise: run the whole decision pipeline live
+at a real site, but stop one step short of the real action, and log
+what *would* have happened instead. `agentic/shell/shadowOpsShell.ts`'s
+`createShadowOpsShell()` is that seam.
+
+- **The identical `ImperativeShell` contract `OpsShell` uses.** `act()`,
+  the planner, Check, and validation need no changes at all to run
+  against it — only whatever composes a shell for a given run chooses
+  which one. Promoting a real site from shadow to live later is
+  swapping this constructor call at the composition root, not
+  reworking anything upstream.
+- **Takes no `SandboxProvisioner` at all, not an unused one.** There is
+  structurally nothing here to call `reprovision()` on — the whole
+  point is that every recommendation still reaches Plan -> Check ->
+  human approval (where the tier requires one) -> `Act` for real, and
+  gets recorded for review, but no real remediation action ever fires.
+- **Today it differs from `OpsShell` in exactly one respect.**
+  `SandboxReprovisioned` doesn't reach a real provisioner here, the
+  same way `NodeCordoned`/`ContainerRestarted`/`DeploymentScaled`
+  already don't reach anything real in `OpsShell` either (none of
+  those three have a real K8s-backed action yet — see "What's
+  deferred" above). `tests/integration/shadowModeRemediation.test.ts`
+  proves this directly: the identical `SandboxTimeout` ->
+  `ReprovisionSandbox` proposal that commits *and reaches the real
+  provisioner* through `OpsShell` commits through `ShadowOpsShell`
+  with the exact same effects and context, but no provisioner is ever
+  constructed or reachable.
+
+`agentic/shell/harnessContract.ts` is the explicit, importable
+statement of what a shadow run is checked against, composing pieces
+that already exist rather than inventing new ones where one already
+does the job:
+
+- **`validateShadowRunPayload`** — a Zod discriminated union over
+  `OpsInstruction`'s four `kind`s, for whatever drives a shadow run to
+  assert *before* ever constructing a proposal. `zod` is a deliberate,
+  first-of-its-kind runtime dependency for this package's own
+  `package.json` — `@xhis/core` itself stays at zero runtime
+  dependencies; this lives entirely on the harness side of that split.
+  Known, accepted duplication: this re-states the same shape
+  `agentic/validation/ops.ts`'s hand-rolled `opsInstructionValidators`
+  already enforces — two sources of truth for one shape, not silently
+  reconciled in this slice.
+- **`checkShadowRunSafety`** — delegates to `opsVerifier` as-is; a
+  Check decision is a business rule, not a shape, so this isn't a new
+  schema.
+- **`assertRecordableEffect`** — the one check that actually belongs at
+  the shell layer, because `commit(context, effects)` is the one place
+  that has `effects` in hand at all. `ShadowOpsShell.commit()` calls
+  this on every effect before recording it; TypeScript already
+  guarantees every effect is well-formed for any caller going through
+  `act()`, so this is defense-in-depth against a corrupted or
+  version-skewed runtime value, not a check expected to ever actually
+  fire in normal operation.
+- **Deliberately not re-implemented here: concurrency.** `act()`
+  (`@xhis/core`'s `agentic/shell/act.ts`) already re-derives every
+  commit's effect via `reexecute` against `shell.readLatest()`
+  immediately before calling `shell.commit()` — generically, for any
+  `ImperativeShell`, `ShadowOpsShell` included. By the time a shell's
+  own `commit()` runs, only the already-fresh-checked `context`/
+  `effects` remain, never the originating instructions or proposal, so
+  there is nothing a shell- or harness-level check could re-verify
+  about staleness without either duplicating `act()`'s own logic or
+  widening `ImperativeShell` past the shape every shell in this
+  package already shares.
+
+**What a real site pilot still needs beyond this seam** — none of it
+exists yet, and all of it is explicitly out of scope for this slice:
+real telemetry adapters translating actual signals (kubelet
+conditions, liveness-probe failures, an actual autoscaler's
+recommendation) into `TelemetryEvent`s instead of hand-constructed
+test fixtures; durable storage for `ShadowOpsShell`'s `commits`/
+`auditLog` instead of in-memory arrays (the same `createFileShell`/
+`createSqliteShell` pattern `@xhis/core` already has for every
+clinical domain); and a real `IdentityProvider` backed by an actual
+on-call roster, not `createInMemoryIdentityProvider` with fixture
+users — the ops-domain equivalent of what `nursingIdentityProvider.ts`
+already built for nursing.
