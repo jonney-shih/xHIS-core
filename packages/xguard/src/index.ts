@@ -27,7 +27,9 @@ export { createBlastRadiusPlaceholderVerifier, opsVerifier } from './agentic/ver
 export { createOpsPlanner, type OpsRemediationContext } from './agentic/planning/opsPlanner.js';
 export { createOpsShell, type OpsCommittedBatch } from './agentic/shell/opsShell.js';
 export { createShadowOpsShell } from './agentic/shell/shadowOpsShell.js';
+export { createFileShadowOpsShell } from './agentic/shell/fileShadowOpsShell.js';
 export {
+  assertAllRecordable,
   assertRecordableEffect,
   checkShadowRunSafety,
   validateShadowRunPayload,

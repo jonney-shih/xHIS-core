@@ -1,6 +1,6 @@
 import type { AuditRecord, ImperativeShell } from '@xhis/core';
 import type { OpsContext, OpsEffect, OpsInstruction } from '../../instructions/types.js';
-import { assertRecordableEffect } from './harnessContract.js';
+import { assertAllRecordable } from './harnessContract.js';
 import type { OpsCommittedBatch } from './opsShell.js';
 
 /**
@@ -33,7 +33,7 @@ import type { OpsCommittedBatch } from './opsShell.js';
  * genuine difference for all four instruction kinds, not just one.
  *
  * `commit()` also runs every effect through `harnessContract.ts`'s
- * `assertRecordableEffect` before recording it — the one piece of that
+ * `assertAllRecordable` before recording it — the one piece of that
  * contract that genuinely belongs at this layer (see that file's own
  * doc comment for why payload-validation and safety-tier-checking
  * don't: `commit(context, effects)` never sees the originating
@@ -42,7 +42,8 @@ import type { OpsCommittedBatch } from './opsShell.js';
  * hands this a malformed effect — this throws only if something
  * bypasses that contract entirely, which is exactly the "shadow mode
  * has to be trustworthy evidence, not just convenient" posture this
- * shell exists for.
+ * shell exists for. `createFileShadowOpsShell` applies the identical
+ * check, via the same shared helper, for the durable counterpart.
  */
 export function createShadowOpsShell(): ImperativeShell<OpsContext, OpsInstruction, OpsEffect> & {
   readonly commits: readonly OpsCommittedBatch[];
@@ -55,14 +56,7 @@ export function createShadowOpsShell(): ImperativeShell<OpsContext, OpsInstructi
     commits,
     auditLog,
     commit(context, effects) {
-      for (const effect of effects) {
-        const result = assertRecordableEffect(effect);
-        if (!result.ok) {
-          throw new Error(
-            `ShadowOpsShell refused to record an unrecordable effect: ${result.error.reasons.join('; ')}`,
-          );
-        }
-      }
+      assertAllRecordable(effects);
       commits.push({ context, effects });
     },
     recordAudit(record) {
