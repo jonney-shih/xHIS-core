@@ -303,15 +303,46 @@ does the job:
   widening `ImperativeShell` past the shape every shell in this
   package already shares.
 
+### Durable shadow-run storage: `createFileShadowOpsShell`
+
+`createShadowOpsShell`'s `commits`/`auditLog` are in-memory arrays —
+fine for a test, useless for an actual pilot, since they vanish the
+moment the process exits and a real shadow run is meant to span days
+or weeks, not one process's lifetime. `agentic/shell/
+fileShadowOpsShell.ts`'s `createFileShadowOpsShell(paths)` is the
+durable counterpart: identical shadow-mode restraint (no
+`SandboxProvisioner`, nothing here can reach a real action), but
+backed by `@xhis/core`'s own `createFileShell` instead of an array.
+
+`createFileShell` never had any clinical-domain-specific shape — it
+was already exactly the kind of domain-agnostic `ImperativeShell`
+machinery `index.ts`'s own doc comment says a new domain should reuse,
+the identical reasoning that already applied to `createInMemoryShell`
+— so this slice also moved `createFileShell` and its read-back helpers
+(`readAuditLog`, `readCommits`, `readLatestContext`, `FileShellPaths`)
+onto `@xhis/core`'s public export surface, where `createInMemoryShell`
+already lived. That was a gap in the surface, not a new design
+decision: nothing about those functions is clinical, and duplicating
+append-only-JSONL storage inside `@xhis/xguard` instead would have
+been exactly the kind of avoidable duplication this codebase's own
+history already steers away from.
+
+`commit()` runs `harnessContract.ts`'s `assertAllRecordable` before
+ever writing to disk — the identical check `createShadowOpsShell`
+applies, via a shared helper extracted from both, so a corrupted or
+version-skewed effect fails loudly before a single byte is written,
+not after. `tests/agentic/shell/fileShadowOpsShell.test.ts` proves the
+durability claim directly: a *second*, freshly constructed shell
+instance pointed at the same files reads back the first instance's
+committed context — standing in for a restarted process that never
+held the first shell's in-memory state at all.
+
 **What a real site pilot still needs beyond this seam** — none of it
 exists yet, and all of it is explicitly out of scope for this slice:
 real telemetry adapters translating actual signals (kubelet
 conditions, liveness-probe failures, an actual autoscaler's
 recommendation) into `TelemetryEvent`s instead of hand-constructed
-test fixtures; durable storage for `ShadowOpsShell`'s `commits`/
-`auditLog` instead of in-memory arrays (the same `createFileShell`/
-`createSqliteShell` pattern `@xhis/core` already has for every
-clinical domain); and a real `IdentityProvider` backed by an actual
+test fixtures; and a real `IdentityProvider` backed by an actual
 on-call roster, not `createInMemoryIdentityProvider` with fixture
 users — the ops-domain equivalent of what `nursingIdentityProvider.ts`
 already built for nursing.

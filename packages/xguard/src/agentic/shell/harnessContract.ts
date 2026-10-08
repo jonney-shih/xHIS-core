@@ -247,3 +247,22 @@ export function assertRecordableEffect(effect: OpsEffect): Result<OpsEffect, Har
   }
   return ok(effect);
 }
+
+/**
+ * The one piece of boilerplate every shadow-mode `ImperativeShell`'s own
+ * `commit()` would otherwise repeat: run {@link assertRecordableEffect}
+ * over a whole batch, throwing on the first violation. `ImperativeShell
+ * .commit()` returns `void` (see `@xhis/core`'s own `shell.ts`), so
+ * throwing is the only way this contract has to refuse — shared here so
+ * `createShadowOpsShell` and `createFileShadowOpsShell` apply the
+ * identical check and the identical failure message, rather than two
+ * copies that could quietly drift apart.
+ */
+export function assertAllRecordable(effects: readonly OpsEffect[]): void {
+  for (const effect of effects) {
+    const result = assertRecordableEffect(effect);
+    if (!result.ok) {
+      throw new Error(`refused to record an unrecordable effect: ${result.error.reasons.join('; ')}`);
+    }
+  }
+}

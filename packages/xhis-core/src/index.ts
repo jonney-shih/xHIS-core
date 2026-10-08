@@ -78,12 +78,26 @@ export { resolveApproval } from './agentic/identity/resolveApproval.js';
 export { resolveApprovalForProposal } from './agentic/identity/resolveApprovalForProposal.js';
 
 // agentic/shell — the ImperativeShell seam, Act itself, the audit
-// record/timeline shapes, and the in-memory shell every domain's own
-// tests (and a new domain's first working slice) are built from.
+// record/timeline shapes, and the in-memory and file-backed shells
+// every domain's own tests (and a new domain's first working slice)
+// are built from. `createFileShell` and its read-back helpers are
+// exported alongside `createInMemoryShell` for the identical reason:
+// neither has any clinical-domain-specific shape, so a new,
+// non-clinical domain needing a *durable* shell (not just an
+// in-memory one for tests) should reuse this, not duplicate
+// append-only-JSONL storage inside its own package.
 export type { ImperativeShell } from './agentic/shell/shell.js';
 export { act, type ActInput, type ActTelemetryTag } from './agentic/shell/act.js';
 export type { AuditRecord, Approval, CommitOutcome } from './agentic/shell/auditRecord.js';
 export { createInMemoryShell } from './agentic/shell/inMemoryShell.js';
+export {
+  createFileShell,
+  readAuditLog,
+  readCommits,
+  readLatestContext,
+  type FileShellPaths,
+} from './agentic/shell/fileShell.js';
+export type { CommittedBatch } from './core/io/commitLog.js';
 export {
   mergeAuditTimelines,
   summarizeAgentAuditRecord,
