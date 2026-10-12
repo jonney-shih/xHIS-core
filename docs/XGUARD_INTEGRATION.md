@@ -342,7 +342,28 @@ exists yet, and all of it is explicitly out of scope for this slice:
 real telemetry adapters translating actual signals (kubelet
 conditions, liveness-probe failures, an actual autoscaler's
 recommendation) into `TelemetryEvent`s instead of hand-constructed
-test fixtures; and a real `IdentityProvider` backed by an actual
-on-call roster, not `createInMemoryIdentityProvider` with fixture
-users — the ops-domain equivalent of what `nursingIdentityProvider.ts`
-already built for nursing.
+test fixtures.
+
+**Checked, and explicitly deferred: a real, on-call-backed
+`IdentityProvider` for ops.** `nursingIdentityProvider.ts`'s pattern
+doesn't actually transfer directly here — it derives `Identity.roles`
+from `NursingContext.roleGrants`/`credentials`, data the nursing
+domain already owns as its own committed state (produced by
+`GrantRole`/`RevokeCredential` flowing through this same system).
+`OpsContext` has no equivalent: nothing in xguard's own domain model
+records who holds `sre-oncall`/`sre-lead`/`platform-lead` this week —
+that roster, if it existed, would live entirely in an external system
+(PagerDuty, Opsgenie, a static roster file, ...), not in anything this
+package commits. No such system exists yet, so there is nothing real
+to read from. `EXAMPLE_opsApprovalPolicy` plus
+`createInMemoryIdentityProvider` is not a placeholder waiting on this
+— it is the deliberate, documented stand-in, the identical `EXAMPLE_`
+discipline every clinical domain's own approval policy already uses,
+until a real on-call system exists to read from. Revisit this once one
+does; building a `createOpsIdentityProvider` ahead of a real source
+would mean guessing at its shape (a live API client vs. a config-file
+reader are very different things) and at its freshness contract
+(nursing's own "always re-read, never cache" discipline is cheap for a
+local file read, but a live on-call API call on every single approval
+resolution has very different latency/rate-limit/availability
+tradeoffs that only a real source would let this be decided against).
