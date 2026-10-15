@@ -52,7 +52,7 @@ for (const scenario of SCENARIOS) {
   if (!doOutcome.ok) continue;
 
   const shell = scenario.createShell();
-  const outcome = act(shell, {
+  const outcome = await act(shell, {
     proposal,
     doOutcome,
     decision,

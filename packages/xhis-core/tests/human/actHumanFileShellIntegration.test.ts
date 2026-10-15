@@ -49,7 +49,7 @@ describe('actHuman() against createFileShell', () => {
     { id: 'nurse-wu', displayName: 'Nurse Wu', roles: ['charge-nurse'] },
   ]);
 
-  it('a real physician directly admits a patient, and the commit and audit trail both survive on disk', () => {
+  it('a real physician directly admits a patient, and the commit and audit trail both survive on disk', async () => {
     const shell = createFileShell<PatientContext, PatientInstruction, PatientEffect, HumanActionAuditRecord<PatientInstruction, PatientEffect>>(
       paths,
     );
@@ -60,7 +60,7 @@ describe('actHuman() against createFileShell', () => {
     });
     expect(authorization.kind).toBe('resolved');
 
-    const outcome = actHuman(shell, {
+    const outcome = await actHuman(shell, {
       instructions: [admit],
       baselineContext: emptyContext,
       reexecute: (ctx) => patientEngine.executeSequence(ctx, [admit]),
@@ -78,7 +78,7 @@ describe('actHuman() against createFileShell', () => {
     expect(auditLog[0]).toMatchObject({ outcome: 'committed', actor: { approverId: 'dr-chen', approverRole: 'physician' } });
   });
 
-  it('a charge-nurse — sufficient to directly admit — cannot directly discharge; nothing is written to either file', () => {
+  it('a charge-nurse — sufficient to directly admit — cannot directly discharge; nothing is written to either file', async () => {
     const admittedContext: PatientContext = {
       encounters: {
         'encounter-1': {
@@ -105,7 +105,7 @@ describe('actHuman() against createFileShell', () => {
     });
     expect(authorization.kind).toBe('unresolved');
 
-    const outcome = actHuman(shell, {
+    const outcome = await actHuman(shell, {
       instructions: [discharge],
       baselineContext: admittedContext,
       reexecute: (ctx) => patientEngine.executeSequence(ctx, [discharge]),

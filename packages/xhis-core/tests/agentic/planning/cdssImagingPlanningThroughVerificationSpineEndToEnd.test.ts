@@ -111,7 +111,7 @@ describe('a CDSS-sourced imaging proposal, Checked through the verification spin
       decision: inlineDecision,
     });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -147,7 +147,7 @@ describe('a CDSS-sourced imaging proposal, Checked through the verification spin
     const proposalId = proposalLog.append(proposal);
     await verifyWithAllImagingWorkers(proposalLog, recordStore);
 
-    const schedulerResults = runScheduler({
+    const schedulerResults = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -174,8 +174,8 @@ describe('a CDSS-sourced imaging proposal, Checked through the verification spin
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const latest = shell.readLatest() ?? contextWithOrderedStudy;
-    const finalOutcome = act(shell, {
+    const latest = (await shell.readLatest()) ?? contextWithOrderedStudy;
+    const finalOutcome = await act(shell, {
       proposal,
       doOutcome: imagingEngine.executeSequence(latest, proposal.instructions),
       decision: decision.decision,

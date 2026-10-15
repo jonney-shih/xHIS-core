@@ -58,7 +58,7 @@ function labContextWithTwoPendingOrders(): LabContext {
 }
 
 describe('relayPatientEffectsToLab', () => {
-  it('processes a durably committed discharge and durably commits the cancellations', () => {
+  it('processes a durably committed discharge and durably commits the cancellations', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
@@ -67,7 +67,7 @@ describe('relayPatientEffectsToLab', () => {
     ]);
     void patientContext;
 
-    const result = relayPatientEffectsToLab(
+    const result = await relayPatientEffectsToLab(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       labShell(),
@@ -85,15 +85,15 @@ describe('relayPatientEffectsToLab', () => {
     expect(readCommits(labCommitsFile)).toHaveLength(1); // admission produced no lab commit; discharge produced one
   });
 
-  it('running again with no new patient commits processes nothing new', () => {
+  it('running again with no new patient commits processes nothing new', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
 
     const cursor = createFileOutboxCursor(cursorFile);
-    const first = relayPatientEffectsToLab(patientCommitsFile, cursor, labShell(), labEngine, { orders: {} }, labIsoTimestamp('2026-07-18T00:01:00.000Z'));
+    const first = await relayPatientEffectsToLab(patientCommitsFile, cursor, labShell(), labEngine, { orders: {} }, labIsoTimestamp('2026-07-18T00:01:00.000Z'));
 
-    const second = relayPatientEffectsToLab(
+    const second = await relayPatientEffectsToLab(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       labShell(),
@@ -106,7 +106,7 @@ describe('relayPatientEffectsToLab', () => {
     expect(second.processedThroughIndex).toBe(1);
   });
 
-  it('safely redelivers an already-processed discharge: a reset cursor finds nothing left to cancel', () => {
+  it('safely redelivers an already-processed discharge: a reset cursor finds nothing left to cancel', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
@@ -116,11 +116,11 @@ describe('relayPatientEffectsToLab', () => {
     void patientContext;
 
     const shell = labShell();
-    const first = relayPatientEffectsToLab(patientCommitsFile, createFileOutboxCursor(cursorFile), shell, labEngine, labContextWithTwoPendingOrders(), labIsoTimestamp('2026-07-19T00:01:00.000Z'));
+    const first = await relayPatientEffectsToLab(patientCommitsFile, createFileOutboxCursor(cursorFile), shell, labEngine, labContextWithTwoPendingOrders(), labIsoTimestamp('2026-07-19T00:01:00.000Z'));
     expect(first.outcomes).toContainEqual({ kind: 'cancelled', encounterId: 'encounter-1', orderId: 'order-1' });
 
     const resetCursor = createFileOutboxCursor(join(dir, 'cursor-reset.jsonl'));
-    const redelivered = relayPatientEffectsToLab(
+    const redelivered = await relayPatientEffectsToLab(
       patientCommitsFile,
       resetCursor,
       shell,

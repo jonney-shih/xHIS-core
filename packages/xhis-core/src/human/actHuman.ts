@@ -53,22 +53,25 @@ export interface ActHumanInput<TCtx, TInstruction extends Kinded, TEffect, TErro
  * closing `tests/agentic/shell/actStaleCommitRace.test.ts` proved
  * necessary applies here too; nothing about *this* path being
  * human-initiated makes it immune to the same race.
+ *
+ * `async`, for the identical reason `act()` is — see that function's
+ * own doc comment in `agentic/shell/act.ts`.
  */
-export function actHuman<TCtx, TInstruction extends Kinded, TEffect, TError>(
+export async function actHuman<TCtx, TInstruction extends Kinded, TEffect, TError>(
   shell: ImperativeShell<TCtx, TInstruction, TEffect, HumanActionAuditRecord<TInstruction, TEffect>>,
   input: ActHumanInput<TCtx, TInstruction, TEffect, TError>,
-): HumanActionOutcome {
+): Promise<HumanActionOutcome> {
   const { instructions, baselineContext, reexecute, authorization, recordedAt } = input;
 
-  const finalize = (
+  const finalize = async (
     outcome: HumanActionOutcome,
     reasons: readonly string[],
     committed?: ExecutionOutcome<TCtx, TEffect>,
-  ): HumanActionOutcome => {
+  ): Promise<HumanActionOutcome> => {
     if (committed) {
-      shell.commit(committed.context, committed.effects);
+      await shell.commit(committed.context, committed.effects);
     }
-    shell.recordAudit({
+    await shell.recordAudit({
       instructions,
       outcome,
       reasons,
@@ -83,7 +86,7 @@ export function actHuman<TCtx, TInstruction extends Kinded, TEffect, TError>(
     return finalize('unauthorized', [authorization.reason]);
   }
 
-  const latest = shell.readLatest() ?? baselineContext;
+  const latest = (await shell.readLatest()) ?? baselineContext;
   const freshOutcome = reexecute(latest);
 
   if (!freshOutcome.ok) {

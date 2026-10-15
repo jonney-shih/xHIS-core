@@ -104,25 +104,25 @@ export interface IngestExternalLabResultResult {
  * re-validates against reality before each commit" for the sibling fix
  * this one mirrors.
  */
-export function ingestExternalLabResult(
+export async function ingestExternalLabResult(
   store: MessageIdempotencyStore,
   labCommitter: LabCommitter,
   labEngine: LabEngineLike,
   labContext: LabContext,
   message: ExternalLabResultMessage,
-): IngestExternalLabResultResult {
+): Promise<IngestExternalLabResultResult> {
   if (store.hasProcessed(message.messageControlId)) {
     return { context: labContext, outcome: { kind: 'duplicate', messageControlId: message.messageControlId } };
   }
 
-  const latest = labCommitter.readLatest() ?? labContext;
+  const latest = (await labCommitter.readLatest()) ?? labContext;
   const reaction = reactToExternalLabResultMessage(labEngine, latest, message);
 
   if (reaction.outcome.kind === 'ingestion-failed') {
     return { context: reaction.context, outcome: reaction.outcome };
   }
 
-  labCommitter.commit(reaction.context, reaction.effects);
+  await labCommitter.commit(reaction.context, reaction.effects);
   store.markProcessed(message.messageControlId);
 
   return { context: reaction.context, outcome: reaction.outcome };

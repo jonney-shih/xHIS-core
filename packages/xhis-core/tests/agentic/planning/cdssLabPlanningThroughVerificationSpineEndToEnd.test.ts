@@ -106,7 +106,7 @@ describe('a CDSS-sourced lab proposal, Checked through the verification spine, r
       decision: inlineDecision,
     });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -141,7 +141,7 @@ describe('a CDSS-sourced lab proposal, Checked through the verification spine, r
     const proposalId = proposalLog.append(proposal);
     await verifyWithAllLabWorkers(proposalLog, recordStore);
 
-    const schedulerResults = runScheduler({
+    const schedulerResults = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -168,8 +168,8 @@ describe('a CDSS-sourced lab proposal, Checked through the verification spine, r
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const latest = shell.readLatest() ?? contextWithPendingOrder;
-    const finalOutcome = act(shell, {
+    const latest = (await shell.readLatest()) ?? contextWithPendingOrder;
+    const finalOutcome = await act(shell, {
       proposal,
       doOutcome: labEngine.executeSequence(latest, proposal.instructions),
       decision: decision.decision,

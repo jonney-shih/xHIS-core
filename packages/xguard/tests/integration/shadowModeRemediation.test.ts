@@ -63,7 +63,7 @@ describe('the same proposal, committed through ShadowOpsShell instead of OpsShel
 
     const provisioner = createInMemorySandboxProvisioner();
     const shell = createOpsShell(provisioner);
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -84,7 +84,7 @@ describe('the same proposal, committed through ShadowOpsShell instead of OpsShel
     // No provisioner constructed, passed, or reachable here at all --
     // createShadowOpsShell() takes zero arguments.
     const shell = createShadowOpsShell();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

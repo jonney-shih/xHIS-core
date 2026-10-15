@@ -47,7 +47,7 @@ function collectTelemetry(): { received: TelemetryEvent[]; unsubscribe: () => vo
 }
 
 describe('act telemetry', () => {
-  it('emits nothing when telemetryTag is omitted, even on a failing path -- fully additive', () => {
+  it('emits nothing when telemetryTag is omitted, even on a failing path -- fully additive', async () => {
     const { received, unsubscribe } = collectTelemetry();
     const shell = newShell();
     const alreadyAdmittedContext: PatientContext = {
@@ -63,7 +63,7 @@ describe('act telemetry', () => {
     const doOutcome = patientEngine.executeSequence(alreadyAdmittedContext, proposal.instructions);
 
     try {
-      const outcome = act(shell, {
+      const outcome = await act(shell, {
         proposal,
         doOutcome,
         decision: { kind: 'accept' },
@@ -79,7 +79,7 @@ describe('act telemetry', () => {
     expect(received).toEqual([]);
   });
 
-  it('emits a HandlerException event when the dry run failed and a telemetryTag was supplied', () => {
+  it('emits a HandlerException event when the dry run failed and a telemetryTag was supplied', async () => {
     const { received, unsubscribe } = collectTelemetry();
     const shell = newShell();
     const alreadyAdmittedContext: PatientContext = {
@@ -95,7 +95,7 @@ describe('act telemetry', () => {
     const doOutcome = patientEngine.executeSequence(alreadyAdmittedContext, proposal.instructions);
 
     try {
-      const outcome = act(shell, {
+      const outcome = await act(shell, {
         proposal,
         doOutcome,
         decision: { kind: 'accept' },
@@ -120,7 +120,7 @@ describe('act telemetry', () => {
     ]);
   });
 
-  it('emits a CommitConflict event on the stale-commit race when a telemetryTag was supplied', () => {
+  it('emits a CommitConflict event on the stale-commit race when a telemetryTag was supplied', async () => {
     const { received, unsubscribe } = collectTelemetry();
     const shell = newShell();
     const emptyContext: PatientContext = { encounters: {} };
@@ -144,7 +144,7 @@ describe('act telemetry', () => {
     );
 
     try {
-      const outcome = act(shell, {
+      const outcome = await act(shell, {
         proposal,
         doOutcome,
         decision: { kind: 'accept' },

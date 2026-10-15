@@ -131,7 +131,7 @@ describe('CDSS planning path, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<PatientContext, PatientInstruction, PatientEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -178,7 +178,7 @@ describe('CDSS planning path, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<PatientContext, PatientInstruction, PatientEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -200,7 +200,7 @@ describe('CDSS planning path, end to end', () => {
    * has to pass through the same validation gate an LLM's raw JSON
    * would, even though the source here is a deterministic rule.
    */
-  it("CDSS's own vitals-entry-panel suggestion, for the same signal that recommended admission, renders through the real validation gate", () => {
+  it("CDSS's own vitals-entry-panel suggestion, for the same signal that recommended admission, renders through the real validation gate", async () => {
     const signal: TriageSignal = { patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), severity: 'emergent' };
     const telemetryLog = createInMemoryUiProposalTelemetryLog();
 
@@ -221,7 +221,7 @@ describe('CDSS planning path, end to end', () => {
     ]);
   });
 
-  it('a vitals-entry-panel candidate missing a required field falls back instead of rendering, even though the source rule is deterministic', () => {
+  it('a vitals-entry-panel candidate missing a required field falls back instead of rendering, even though the source rule is deterministic', async () => {
     const telemetryLog = createInMemoryUiProposalTelemetryLog();
 
     // The same shape suggestVitalsEntryPanel produces, but with patientId

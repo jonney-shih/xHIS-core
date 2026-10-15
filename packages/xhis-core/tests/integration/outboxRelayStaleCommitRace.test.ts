@@ -68,7 +68,7 @@ function commitPatientInstructions(context: PatientContext, instructions: readon
  * rather than merely describing it.
  */
 describe('relayPatientEffectsToBed re-validates against the real bed state before each commit', () => {
-  it('a direct AssignBed that lands before the relay commits is never overwritten — the relay sees it and picks a different bed', () => {
+  it('a direct AssignBed that lands before the relay commits is never overwritten — the relay sees it and picks a different bed', async () => {
     const shell = bedShell();
 
     // A direct assignment lands first — exactly what act()/actHuman()
@@ -94,7 +94,7 @@ describe('relayPatientEffectsToBed re-validates against the real bed state befor
     // already has bed-1 occupied by encounter-5) — exactly what a
     // caller holding an earlier snapshot would pass. The fix: it no
     // longer trusts that snapshot once something newer is on record.
-    const result = relayPatientEffectsToBed(
+    const result = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       shell,
@@ -120,7 +120,7 @@ describe('relayPatientEffectsToBed re-validates against the real bed state befor
     expect(latest.beds['bed-2']).toMatchObject({ status: 'occupied', encounterId: 'encounter-1' });
   });
 
-  it('reports no-bed-available, rather than overwriting anything, when the real current state leaves nothing free', () => {
+  it('reports no-bed-available, rather than overwriting anything, when the real current state leaves nothing free', async () => {
     const shell = bedShell();
 
     // Both beds get directly occupied by other encounters after the
@@ -149,7 +149,7 @@ describe('relayPatientEffectsToBed re-validates against the real bed state befor
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:01:00.000Z') },
     ]);
 
-    const result = relayPatientEffectsToBed(
+    const result = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       shell,

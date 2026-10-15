@@ -76,7 +76,7 @@ const reportProposal: PlanProposal<ImagingInstruction> = {
  * already exercises.
  */
 describe('imaging domain approval flow, end to end', () => {
-  it('a radiologic-technologist may approve an OrderStudy (review-required), and it commits', () => {
+  it('a radiologic-technologist may approve an OrderStudy (review-required), and it commits', async () => {
     const doOutcome = imagingEngine.executeSequence(emptyImagingContext, orderProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -102,7 +102,7 @@ describe('imaging domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<ImagingContext, ImagingInstruction, ImagingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: orderProposal,
       doOutcome,
       decision,
@@ -117,7 +117,7 @@ describe('imaging domain approval flow, end to end', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', approval: { approverId: 'tech-huang', approverRole: 'radiologic-technologist' } });
   });
 
-  it('a referring physician may NOT approve a ReportStudy (approval-required) — radiologist-only, and nothing commits', () => {
+  it('a referring physician may NOT approve a ReportStudy (approval-required) — radiologist-only, and nothing commits', async () => {
     const doOutcome = imagingEngine.executeSequence(performedContext, reportProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -139,7 +139,7 @@ describe('imaging domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<ImagingContext, ImagingInstruction, ImagingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: reportProposal,
       doOutcome,
       decision,
@@ -152,7 +152,7 @@ describe('imaging domain approval flow, end to end', () => {
     expect(shell.commits).toHaveLength(0);
   });
 
-  it('a radiologist may approve the same ReportStudy a referring physician could not, and it commits', () => {
+  it('a radiologist may approve the same ReportStudy a referring physician could not, and it commits', async () => {
     const doOutcome = imagingEngine.executeSequence(performedContext, reportProposal.instructions);
     const decision = imagingVerifier.verify(reportProposal);
     if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
@@ -167,7 +167,7 @@ describe('imaging domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<ImagingContext, ImagingInstruction, ImagingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: reportProposal,
       doOutcome,
       decision,

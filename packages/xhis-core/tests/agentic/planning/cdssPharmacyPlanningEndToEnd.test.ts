@@ -145,7 +145,7 @@ describe('CDSS pharmacy-dispense planning path, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -195,7 +195,7 @@ describe('CDSS pharmacy-dispense planning path, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

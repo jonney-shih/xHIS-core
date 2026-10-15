@@ -18,8 +18,8 @@ export type PatientLabReactor = (
  * to durably persist a lab reaction and re-validate it against reality
  * before each commit. */
 export interface LabCommitter {
-  commit(context: LabContext, effects: readonly LabEffect[]): void;
-  readLatest(): LabContext | undefined;
+  commit(context: LabContext, effects: readonly LabEffect[]): void | Promise<void>;
+  readLatest(): LabContext | undefined | Promise<LabContext | undefined>;
 }
 
 export interface RelayPatientEffectsToLabResult {
@@ -40,7 +40,7 @@ export interface RelayPatientEffectsToLabResult {
  * See `docs/DETERMINISTIC_CORE_PATTERN.md`'s event-bus section for the
  * full conclusion this supports.
  */
-export function relayPatientEffectsToLab(
+export async function relayPatientEffectsToLab(
   patientCommitsFile: string,
   cursor: OutboxCursor,
   labCommitter: LabCommitter,
@@ -48,7 +48,7 @@ export function relayPatientEffectsToLab(
   labContext: LabContext,
   timestamp: IsoTimestamp,
   react: PatientLabReactor = reactToPatientEffectsForLab,
-): RelayPatientEffectsToLabResult {
+): Promise<RelayPatientEffectsToLabResult> {
   return relayEffects<PatientContext, PatientEffect, LabContext, PatientLabReactionOutcome, LabEffect>(
     (fromIndex) => readCommits<PatientContext, PatientEffect>(patientCommitsFile).slice(fromIndex),
     cursor,

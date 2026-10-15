@@ -82,7 +82,7 @@ describe('SandboxTimeout -> ReprovisionSandbox remediation, end to end', () => {
     const provisioner = createInMemorySandboxProvisioner();
     const shell = createOpsShell(provisioner);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

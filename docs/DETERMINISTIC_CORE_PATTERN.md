@@ -3764,3 +3764,73 @@ even than ledger's.
   on their own terms: five accepts (patient, bed, lab, scheduling,
   imaging) and three declines (pharmacy, ledger, nursing) — a real
   split, not a rubber stamp, and not a blanket refusal either.
+
+## Resolved: `ImperativeShell` and `act()` become async-capable
+
+Triggered by a real product direction, not a speculative one: a
+next-generation HIS sized for hospitals below the largest medical
+centers, with genuine cloud-native distributed processing — a shared
+Postgres cluster across hospitals, row-level tenant isolation via RLS.
+Before any of that could be designed, a structural fact about the
+existing architecture had to be confronted directly: `ImperativeShell`
+(`agentic/shell/shell.ts`) and `act()` (`agentic/shell/act.ts`) were
+both fully synchronous, and **there is no synchronous Postgres client
+in Node** — unlike `node:sqlite`'s special-cased `DatabaseSync`
+(a local file, no network), a real client-server database can only
+ever be exposed as `Promise`-returning calls. A Postgres-backed shell
+could not have implemented the interface as it stood — not a style
+preference, a hard type-level impossibility.
+
+- **The fix, scoped as tightly as the problem allowed.**
+  `ImperativeShell.commit`/`recordAudit`/`readLatest` were widened to
+  return `T | Promise<T>` instead of only `T`. `act()`, `actHuman()`
+  (`human/actHuman.ts`), `runScheduler()`
+  (`agentic/shell/scheduler.ts`), and `relayEffects()`
+  (`core/io/relay.ts`, plus its four domain-specific `XCommitter`
+  bindings in `integration/outboxRelay*.ts` and
+  `ingestExternalLabResult` in `integration/externalLabResultAdapter.ts`)
+  all became `async`, `await`-ing every shell call unconditionally.
+  `await`-ing an already-resolved, non-`Promise` value is a no-op in
+  JS — this is the whole reason the fix could stay this narrow:
+  `createInMemoryShell`, `createFileShell`, `createSqliteShell`, and
+  `@xhis/xguard`'s `createOpsShell`/`createShadowOpsShell`/
+  `createFileShadowOpsShell` needed **zero** implementation changes.
+  One `act()`, not a duplicated async sibling — avoiding exactly the
+  two-implementations-drift risk a `actAsync()` copy would have
+  introduced.
+- **The blast radius was found empirically, not estimated.** An
+  initial grep for literal `act(` call sites produced a misleading,
+  overly broad list (matching doc-comment prose like "the same thing
+  `act()` already guarantees," and substring collisions like
+  `react(`/`transaction(` containing the letters "act("). The reliable
+  method was mechanical: make the interface change, let `tsc` surface
+  every call site a strict type incompatibility could catch, fix those,
+  then run the *actual test suite* — because `expect(outcome).toBe(
+  'committed')` against an unawaited `Promise<CommitOutcome>` is not a
+  type error (`expect` is generic), only a guaranteed runtime failure.
+  This surfaced real consumers a static grep had missed entirely:
+  `agentic/shell/scheduler.ts` calling `shell.readLatest()` directly,
+  `core/io/relay.ts`'s whole `EffectCommitter`-based outbox-relay
+  mechanism (four domain bindings), and
+  `integration/externalLabResultAdapter.ts`'s `ingestExternalLabResult`
+  — none of which import `ImperativeShell` by name, all of which
+  structurally duck-type against it.
+- **Proven, not asserted, across both packages.** `@xhis/core`:
+  150 test files / 641 tests, typecheck and lint clean. `@xhis/xguard`:
+  13 test files / 44 tests, typecheck and lint clean. `scripts/
+  roleplay-cli.mjs` and `scripts/verify-roleplay-all9.mjs` re-verified
+  directly, not just by inspection. Every fix was a missing `await` at
+  an existing call site or a newly-`async` function signature — zero
+  behavioral changes for any synchronous shell, the same "widen the
+  contract, don't rewrite the callers" discipline `TAuditRecord`'s own
+  default-type-parameter trick already used for `actHuman`'s sake.
+- **What this does not yet do.** No real async `ImperativeShell`
+  implementation exists yet — this PR makes one *possible*, not real.
+  A Postgres-backed shell, the actual multi-writer optimistic-
+  concurrency mechanism it needs (`commit()` throwing on a detected
+  version conflict, since `ImperativeShell.commit(): void` has no
+  other way to refuse), and the new sibling package it has to live in
+  (`@xhis/core` stays at zero runtime dependencies; a real Postgres
+  client is exactly the "distributed/I-O harness" category that must
+  stay outside the deterministic core) are the next, separate piece of
+  work this one unblocks.

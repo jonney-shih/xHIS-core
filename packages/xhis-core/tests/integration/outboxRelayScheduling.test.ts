@@ -76,7 +76,7 @@ function schedulingContextWithTwoPendingBookings(): SchedulingContext {
 }
 
 describe('relayPatientEffectsToScheduling', () => {
-  it('processes a durably committed discharge and durably commits the cancellations', () => {
+  it('processes a durably committed discharge and durably commits the cancellations', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
@@ -85,7 +85,7 @@ describe('relayPatientEffectsToScheduling', () => {
     ]);
     void patientContext;
 
-    const result = relayPatientEffectsToScheduling(
+    const result = await relayPatientEffectsToScheduling(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       schedulingShell(),
@@ -103,13 +103,13 @@ describe('relayPatientEffectsToScheduling', () => {
     expect(readCommits(schedulingCommitsFile)).toHaveLength(1); // admission produced no scheduling commit; discharge produced one
   });
 
-  it('running again with no new patient commits processes nothing new', () => {
+  it('running again with no new patient commits processes nothing new', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
 
     const cursor = createFileOutboxCursor(cursorFile);
-    const first = relayPatientEffectsToScheduling(
+    const first = await relayPatientEffectsToScheduling(
       patientCommitsFile,
       cursor,
       schedulingShell(),
@@ -118,7 +118,7 @@ describe('relayPatientEffectsToScheduling', () => {
       schedulingIsoTimestamp('2026-07-21T00:01:00.000Z'),
     );
 
-    const second = relayPatientEffectsToScheduling(
+    const second = await relayPatientEffectsToScheduling(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       schedulingShell(),
@@ -131,7 +131,7 @@ describe('relayPatientEffectsToScheduling', () => {
     expect(second.processedThroughIndex).toBe(1);
   });
 
-  it('safely redelivers an already-processed discharge: a reset cursor finds nothing left to cancel', () => {
+  it('safely redelivers an already-processed discharge: a reset cursor finds nothing left to cancel', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
@@ -141,7 +141,7 @@ describe('relayPatientEffectsToScheduling', () => {
     void patientContext;
 
     const shell = schedulingShell();
-    const first = relayPatientEffectsToScheduling(
+    const first = await relayPatientEffectsToScheduling(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       shell,
@@ -152,7 +152,7 @@ describe('relayPatientEffectsToScheduling', () => {
     expect(first.outcomes).toContainEqual({ kind: 'cancelled', encounterId: 'encounter-1', bookingId: 'booking-1' });
 
     const resetCursor = createFileOutboxCursor(join(dir, 'cursor-reset.jsonl'));
-    const redelivered = relayPatientEffectsToScheduling(
+    const redelivered = await relayPatientEffectsToScheduling(
       patientCommitsFile,
       resetCursor,
       shell,
@@ -169,7 +169,7 @@ describe('relayPatientEffectsToScheduling', () => {
     expect(redelivered.context.bookings['booking-2'].status).toBe('cancelled');
   });
 
-  it('never touches a booking whose subjectId is not this encounter, even when relayed durably', () => {
+  it('never touches a booking whose subjectId is not this encounter, even when relayed durably', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
@@ -191,7 +191,7 @@ describe('relayPatientEffectsToScheduling', () => {
       },
     };
 
-    const result = relayPatientEffectsToScheduling(
+    const result = await relayPatientEffectsToScheduling(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       schedulingShell(),

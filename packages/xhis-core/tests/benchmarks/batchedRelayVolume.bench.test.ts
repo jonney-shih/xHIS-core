@@ -73,7 +73,7 @@ const NEW_EVENT_COUNT = 150;
 const BATCH_SIZE = 15;
 
 describe('batched relay driver, verified against the same growing log', () => {
-  it('coalescing new commits into batches costs substantially less total relay time than relaying after every single one', () => {
+  it('coalescing new commits into batches costs substantially less total relay time than relaying after every single one', async () => {
     // --- naive: relay after every single new commit ---
     const naivePatientCommitsFile = join(dir, 'naive-patient-commits.jsonl');
     writeHistoricalCommits(naivePatientCommitsFile, HISTORICAL_COUNT);
@@ -94,7 +94,7 @@ describe('batched relay driver, verified against the same growing log', () => {
       appendOneNewCommit(naivePatientCommitsFile, i);
 
       const start = performance.now();
-      const result = relayPatientEffectsToBed(
+      const result = await relayPatientEffectsToBed(
         naivePatientCommitsFile,
         naiveCursor,
         naiveShell,
@@ -127,9 +127,9 @@ describe('batched relay driver, verified against the same growing log', () => {
     // maxWaitMs is infinite on purpose — this comparison isolates the
     // count-based trigger only; the loop index below stands in for a
     // clock (fine, since the time-based branch can never fire).
-    const driver = createBatchedRelayDriver({ maxPendingCount: BATCH_SIZE, maxWaitMs: Number.POSITIVE_INFINITY }, () => {
+    const driver = createBatchedRelayDriver({ maxPendingCount: BATCH_SIZE, maxWaitMs: Number.POSITIVE_INFINITY }, async () => {
       const start = performance.now();
-      const result = relayPatientEffectsToBed(
+      const result = await relayPatientEffectsToBed(
         batchedPatientCommitsFile,
         batchedCursor,
         batchedShell,
@@ -146,9 +146,9 @@ describe('batched relay driver, verified against the same growing log', () => {
 
     for (let i = 0; i < NEW_EVENT_COUNT; i += 1) {
       appendOneNewCommit(batchedPatientCommitsFile, i);
-      driver.onCommit(i);
+      await driver.onCommit(i);
     }
-    driver.flush(); // catches any remainder — none expected here, since NEW_EVENT_COUNT divides evenly by BATCH_SIZE
+    await driver.flush(); // catches any remainder — none expected here, since NEW_EVENT_COUNT divides evenly by BATCH_SIZE
 
     console.log(
       `[benchmark] historical=${HISTORICAL_COUNT} newEvents=${NEW_EVENT_COUNT} batchSize=${BATCH_SIZE} ` +

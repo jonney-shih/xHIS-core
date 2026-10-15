@@ -83,7 +83,7 @@ describe('mergeAuditTimelines — a real, three-source, cross-domain, cross-path
     });
     if (approval.kind !== 'resolved') throw new Error('expected resolved');
 
-    act(patientAgentShell, {
+    await act(patientAgentShell, {
       proposal: admitProposal,
       doOutcome,
       decision,
@@ -128,7 +128,7 @@ describe('mergeAuditTimelines — a real, three-source, cross-domain, cross-path
       commitsFile: join(dir, 'patient-human-commits.jsonl'),
       auditFile: join(dir, 'patient-human-audit.jsonl'),
     });
-    actHuman(patientHumanShell, {
+    await actHuman(patientHumanShell, {
       instructions: [discharge],
       baselineContext: admittedContext,
       reexecute: (ctx) => patientEngine.executeSequence(ctx, [discharge]),
@@ -144,7 +144,7 @@ describe('mergeAuditTimelines — a real, three-source, cross-domain, cross-path
       commitsFile: join(dir, 'bed-human-commits.jsonl'),
       auditFile: join(dir, 'bed-human-audit.jsonl'),
     });
-    actHuman(bedHumanShell, {
+    await actHuman(bedHumanShell, {
       instructions: [assign],
       baselineContext: twoAvailableBeds,
       reexecute: (ctx) => bedEngine.executeSequence(ctx, [assign]),
@@ -184,7 +184,7 @@ describe('mergeAuditTimelines — a real, three-source, cross-domain, cross-path
     expect(timeline[2]!.summary).toContain('by dr-lin (physician)');
   });
 
-  it('merges zero, one, or many sources without special-casing any of them', () => {
+  it('merges zero, one, or many sources without special-casing any of them', async () => {
     expect(mergeAuditTimelines()).toEqual([]);
     expect(mergeAuditTimelines([{ source: 'a', recordedAt: isoTimestamp('2026-07-29T00:00:00.000Z'), summary: 'only entry' }])).toHaveLength(1);
   });

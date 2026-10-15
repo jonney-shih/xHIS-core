@@ -35,10 +35,10 @@ const unresolved: ApprovalResolution = {
 };
 
 describe('actHuman', () => {
-  it('commits directly when the actor is authorized and the sequence executes cleanly', () => {
+  it('commits directly when the actor is authorized and the sequence executes cleanly', async () => {
     const shell = newShell();
 
-    const outcome = actHuman(shell, {
+    const outcome = await actHuman(shell, {
       instructions: [admit],
       baselineContext: emptyContext,
       reexecute,
@@ -59,10 +59,10 @@ describe('actHuman', () => {
     ]);
   });
 
-  it('never commits when the actor is unauthorized, and records why without an actor on the audit entry', () => {
+  it('never commits when the actor is unauthorized, and records why without an actor on the audit entry', async () => {
     const shell = newShell();
 
-    const outcome = actHuman(shell, {
+    const outcome = await actHuman(shell, {
       instructions: [admit],
       baselineContext: emptyContext,
       reexecute,
@@ -82,7 +82,7 @@ describe('actHuman', () => {
     });
   });
 
-  it('rejects, without committing, when the freshly re-executed sequence fails even though the actor is authorized', () => {
+  it('rejects, without committing, when the freshly re-executed sequence fails even though the actor is authorized', async () => {
     const shell = newShell();
     const alreadyAdmittedContext: PatientContext = {
       encounters: {
@@ -95,7 +95,7 @@ describe('actHuman', () => {
       },
     };
 
-    const outcome = actHuman(shell, {
+    const outcome = await actHuman(shell, {
       instructions: [admit],
       baselineContext: alreadyAdmittedContext,
       reexecute,
@@ -112,7 +112,7 @@ describe('actHuman', () => {
     });
   });
 
-  it('re-derives what to commit from shell.readLatest(), not baselineContext, once something else has already committed', () => {
+  it('re-derives what to commit from shell.readLatest(), not baselineContext, once something else has already committed', async () => {
     const shell = newShell();
 
     // Simulates another actor having already admitted this same encounter
@@ -133,7 +133,7 @@ describe('actHuman', () => {
       [],
     );
 
-    const outcome = actHuman(shell, {
+    const outcome = await actHuman(shell, {
       instructions: [admit],
       baselineContext: emptyContext, // stale: unaware of the commit above
       reexecute,

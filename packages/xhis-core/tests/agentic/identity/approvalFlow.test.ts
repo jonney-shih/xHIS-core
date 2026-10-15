@@ -52,7 +52,7 @@ describe('resolveApproval + act composed end to end', () => {
     return patientEngine.executeSequence(ctx, proposal.instructions);
   }
 
-  it('commits once a verified, permitted identity approves', () => {
+  it('commits once a verified, permitted identity approves', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(admittedContext, proposal.instructions);
 
@@ -64,7 +64,7 @@ describe('resolveApproval + act composed end to end', () => {
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
@@ -78,7 +78,7 @@ describe('resolveApproval + act composed end to end', () => {
     expect(shell.commits).toHaveLength(1);
   });
 
-  it('an impersonation attempt never produces an Approval for act() to honor', () => {
+  it('an impersonation attempt never produces an Approval for act() to honor', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(admittedContext, proposal.instructions);
 
@@ -91,7 +91,7 @@ describe('resolveApproval + act composed end to end', () => {
 
     // There is nothing to hand act() — the impersonation attempt stays
     // `awaiting-approval`, same as if no one had responded at all.
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },

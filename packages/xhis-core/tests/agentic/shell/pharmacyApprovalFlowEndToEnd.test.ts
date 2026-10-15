@@ -61,7 +61,7 @@ const dispenseProposal: PlanProposal<PharmacyInstruction> = {
  * reuse the same one.
  */
 describe('pharmacy domain approval flow, end to end', () => {
-  it('a physician may approve a PrescribeMedication (review-required), and it commits', () => {
+  it('a physician may approve a PrescribeMedication (review-required), and it commits', async () => {
     const doOutcome = pharmacyEngine.executeSequence(emptyPharmacyContext, prescribeProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -87,7 +87,7 @@ describe('pharmacy domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: prescribeProposal,
       doOutcome,
       decision,
@@ -102,7 +102,7 @@ describe('pharmacy domain approval flow, end to end', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', approval: { approverId: 'dr-lin', approverRole: 'physician' } });
   });
 
-  it('the same physician may NOT approve a DispenseMedication (approval-required) — pharmacist-only, and nothing commits', () => {
+  it('the same physician may NOT approve a DispenseMedication (approval-required) — pharmacist-only, and nothing commits', async () => {
     const doOutcome = pharmacyEngine.executeSequence(prescribedContext, dispenseProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -124,7 +124,7 @@ describe('pharmacy domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: dispenseProposal,
       doOutcome,
       decision,
@@ -137,7 +137,7 @@ describe('pharmacy domain approval flow, end to end', () => {
     expect(shell.commits).toHaveLength(0);
   });
 
-  it('a pharmacist may approve the same DispenseMedication a physician could not, and it commits', () => {
+  it('a pharmacist may approve the same DispenseMedication a physician could not, and it commits', async () => {
     const doOutcome = pharmacyEngine.executeSequence(prescribedContext, dispenseProposal.instructions);
     const decision = pharmacyVerifier.verify(dispenseProposal);
     if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
@@ -152,7 +152,7 @@ describe('pharmacy domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: dispenseProposal,
       doOutcome,
       decision,

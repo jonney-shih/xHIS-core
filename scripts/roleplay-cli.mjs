@@ -319,7 +319,7 @@ async function runScenario(scenario) {
 
   const doOutcome = scenario.engine.executeSequence(context, proposal.instructions);
   const shell = scenario.createShell();
-  const outcome = act(shell, {
+  const outcome = await act(shell, {
     proposal,
     doOutcome,
     decision,

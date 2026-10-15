@@ -122,7 +122,7 @@ describe('a CDSS-sourced ledger proposal, Checked through the verification spine
       decision: inlineDecision,
     });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -158,7 +158,7 @@ describe('a CDSS-sourced ledger proposal, Checked through the verification spine
     const proposalId = proposalLog.append(proposal);
     await verifyWithAllLedgerWorkers(proposalLog, recordStore);
 
-    const schedulerResults = runScheduler({
+    const schedulerResults = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -185,8 +185,8 @@ describe('a CDSS-sourced ledger proposal, Checked through the verification spine
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const latest = shell.readLatest() ?? contextWithPostedEntry;
-    const finalOutcome = act(shell, {
+    const latest = (await shell.readLatest()) ?? contextWithPostedEntry;
+    const finalOutcome = await act(shell, {
       proposal,
       doOutcome: ledgerEngine.executeSequence(latest, proposal.instructions),
       decision: decision.decision,

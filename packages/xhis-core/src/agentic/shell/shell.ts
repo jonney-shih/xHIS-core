@@ -26,10 +26,21 @@ import type { AuditRecord } from './auditRecord.js';
  * doesn't decide (whether the two paths should ever share one *audit*
  * store, not just the same shell mechanism — still open, see
  * docs/AGENTIC_LAYER.md).
+ *
+ * Every method may return its plain value *or* a `Promise` of one —
+ * added so a real client-server database (a networked Postgres
+ * connection, unlike `createFileShell`'s synchronous `fs` calls or
+ * `createSqliteShell`'s synchronous `node:sqlite`) can implement this
+ * interface honestly, without faking synchronous I/O over a socket.
+ * `act()`/`actHuman()` `await` every call unconditionally — `await`ing
+ * a plain, already-resolved value is a no-op in JS, so every existing
+ * synchronous shell (`createInMemoryShell`, `createFileShell`,
+ * `createSqliteShell`) keeps working completely unchanged; nothing
+ * about this widening requires touching any of their implementations.
  */
 export interface ImperativeShell<TCtx, TInstruction extends Kinded, TEffect, TAuditRecord = AuditRecord<TInstruction, TEffect>> {
-  commit(context: TCtx, effects: readonly TEffect[]): void;
-  recordAudit(record: TAuditRecord): void;
+  commit(context: TCtx, effects: readonly TEffect[]): void | Promise<void>;
+  recordAudit(record: TAuditRecord): void | Promise<void>;
   /**
    * The context as of the most recently committed batch, or `undefined`
    * if nothing has ever been committed. Added so `act()` can re-check a
@@ -42,5 +53,5 @@ export interface ImperativeShell<TCtx, TInstruction extends Kinded, TEffect, TAu
    * committing that stale computation would silently overwrite
    * whatever committed in the meantime.
    */
-  readLatest(): TCtx | undefined;
+  readLatest(): TCtx | undefined | Promise<TCtx | undefined>;
 }

@@ -63,7 +63,7 @@ const reportProposal: PlanProposal<LabInstruction> = {
  * *some* role can always approve *something*.
  */
 describe('lab domain approval flow, end to end', () => {
-  it('a lab-technologist may approve an OrderLabTest (review-required), and it commits', () => {
+  it('a lab-technologist may approve an OrderLabTest (review-required), and it commits', async () => {
     const doOutcome = labEngine.executeSequence(emptyLabContext, orderProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -89,7 +89,7 @@ describe('lab domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LabContext, LabInstruction, LabEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: orderProposal,
       doOutcome,
       decision,
@@ -104,7 +104,7 @@ describe('lab domain approval flow, end to end', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', approval: { approverId: 'tech-lin', approverRole: 'lab-technologist' } });
   });
 
-  it('the same lab-technologist may NOT approve a ReportLabResult (approval-required) — physician-only, and nothing commits', () => {
+  it('the same lab-technologist may NOT approve a ReportLabResult (approval-required) — physician-only, and nothing commits', async () => {
     const doOutcome = labEngine.executeSequence(orderedContext, reportProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -126,7 +126,7 @@ describe('lab domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LabContext, LabInstruction, LabEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: reportProposal,
       doOutcome,
       decision,
@@ -139,7 +139,7 @@ describe('lab domain approval flow, end to end', () => {
     expect(shell.commits).toHaveLength(0);
   });
 
-  it('a physician may approve the same ReportLabResult a lab-technologist could not, and it commits', () => {
+  it('a physician may approve the same ReportLabResult a lab-technologist could not, and it commits', async () => {
     const doOutcome = labEngine.executeSequence(orderedContext, reportProposal.instructions);
     const decision = labVerifier.verify(reportProposal);
     if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
@@ -154,7 +154,7 @@ describe('lab domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LabContext, LabInstruction, LabEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: reportProposal,
       doOutcome,
       decision,

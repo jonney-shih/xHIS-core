@@ -22,7 +22,7 @@ import type { SchedulingContext, SchedulingEffect, SchedulingInstruction } from 
 describe('scheduling agentic pipeline, end to end', () => {
   const emptySchedulingContext: SchedulingContext = { bookings: {} };
 
-  it('a raw untrusted ScheduleBooking candidate flows through validation, Do, Check, approval, and Act to a real commit', () => {
+  it('a raw untrusted ScheduleBooking candidate flows through validation, Do, Check, approval, and Act to a real commit', async () => {
     const proposalResult = toPlanProposal<SchedulingInstruction>(
       schedulingInstructionValidators,
       {
@@ -70,7 +70,7 @@ describe('scheduling agentic pipeline, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<SchedulingContext, SchedulingInstruction, SchedulingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -89,7 +89,7 @@ describe('scheduling agentic pipeline, end to end', () => {
     });
   });
 
-  it('a malformed candidate never becomes a PlanProposal at all', () => {
+  it('a malformed candidate never becomes a PlanProposal at all', async () => {
     const proposalResult = toPlanProposal<SchedulingInstruction>(
       schedulingInstructionValidators,
       {
@@ -104,7 +104,7 @@ describe('scheduling agentic pipeline, end to end', () => {
     expect(proposalResult.ok).toBe(false);
   });
 
-  it('a scheduling-coordinator cannot approve CancelBooking — the tiers use disjoint roles, not a hierarchy', () => {
+  it('a scheduling-coordinator cannot approve CancelBooking — the tiers use disjoint roles, not a hierarchy', async () => {
     const bookedId = bookingId('booking-1');
     const cancelBooking: SchedulingInstruction = {
       kind: 'CancelBooking',
@@ -150,7 +150,7 @@ describe('scheduling agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<SchedulingContext, SchedulingInstruction, SchedulingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

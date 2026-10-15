@@ -48,13 +48,13 @@ describe('act() against createFileShell', () => {
     return patientEngine.executeSequence(ctx, proposal.instructions);
   }
 
-  it('commits to disk and writes a matching audit record when Check accepts', () => {
+  it('commits to disk and writes a matching audit record when Check accepts', async () => {
     // Explicit type arguments: `createFileShell(paths)` alone carries no
     // information TCtx/TInstruction/TEffect could be inferred from.
     const shell = createFileShell<PatientContext, PatientInstruction, PatientEffect>(paths);
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
@@ -69,11 +69,11 @@ describe('act() against createFileShell', () => {
     expect(readAuditLog(paths.auditFile)[0]).toMatchObject({ commitOutcome: 'committed' });
   });
 
-  it('writes an audit record but nothing to the commits file when Check rejects', () => {
+  it('writes an audit record but nothing to the commits file when Check rejects', async () => {
     const shell = createFileShell<PatientContext, PatientInstruction, PatientEffect>(paths);
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['business rule violated'] },
@@ -87,10 +87,10 @@ describe('act() against createFileShell', () => {
     expect(readAuditLog(paths.auditFile)).toHaveLength(1);
   });
 
-  it('accumulates audit records across repeated calls, surviving as separate shell instances would', () => {
+  it('accumulates audit records across repeated calls, surviving as separate shell instances would', async () => {
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    act(createFileShell<PatientContext, PatientInstruction, PatientEffect>(paths), {
+    await act(createFileShell<PatientContext, PatientInstruction, PatientEffect>(paths), {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
@@ -98,7 +98,7 @@ describe('act() against createFileShell', () => {
       reexecute,
       recordedAt: '2026-07-19T00:00:01.000Z',
     });
-    act(createFileShell<PatientContext, PatientInstruction, PatientEffect>(paths), {
+    await act(createFileShell<PatientContext, PatientInstruction, PatientEffect>(paths), {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['second attempt rejected'] },
