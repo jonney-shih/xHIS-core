@@ -3834,3 +3834,105 @@ preference, a hard type-level impossibility.
   client is exactly the "distributed/I-O harness" category that must
   stay outside the deterministic core) are the next, separate piece of
   work this one unblocks.
+
+## Resolved: a real, multi-writer-safe `ImperativeShell` (`@xhis/postgres-shell`)
+
+The piece the previous section deliberately deferred: an actual
+Postgres-backed `ImperativeShell`, in its own new sibling package —
+`@xhis/postgres-shell`, depending on `@xhis/core` (for the
+`ImperativeShell` type and nothing else) and `pg`, the same "build only
+on `@xhis/core`'s public export surface" constraint `@xhis/xguard`
+already follows. `@xhis/core` itself gained no new dependency; `pg`
+lives only here.
+
+- **The actual multi-writer race this closes.** `act()`'s own
+  `readLatest()` -> `reexecute` -> `commit()` sequence (see the
+  previous section) is three separate calls. Across a single
+  in-process synchronous shell this was never a real race — nothing
+  else can run between those calls on one JS call stack. Once `shell`
+  is backed by a real, separate database process with multiple
+  application instances writing to it, that stops being true: a second
+  writer can commit in the gap between this instance's `readLatest()`
+  and its `commit()`, and naively overwriting would silently erase it.
+- **The mechanism: `(tenant_id, version)` as a real database
+  constraint, not an application-level check.** `xhis_shell_commits`
+  (`packages/postgres-shell/src/schema.ts`) has
+  `PRIMARY KEY (tenant_id, version)`; `version` is never
+  database-generated — `createPostgresShell` computes "one past the
+  version it most recently saw" and tries to insert exactly that row.
+  A losing writer's insert fails with Postgres's own `23505`
+  unique-violation, atomically, at the one place that can actually see
+  every concurrent writer at once. `postgresShell.ts` translates that
+  into a thrown `PostgresShellConflictError`
+  (`src/conflictError.ts`) — throwing, not a new `CommitOutcome`
+  value, matching the "a shell refuses by throwing" precedent
+  `@xhis/xguard`'s `createShadowOpsShell`/`createFileShadowOpsShell`
+  already established for a harness-contract violation. `act()` has no
+  special handling for this and needs none: it already `await`s
+  `shell.commit(...)`, so the error simply propagates out as a
+  rejected `Promise`. The one safe recovery is re-deriving a fresh
+  proposal against current state and calling `act()` again — not
+  retrying the same already-computed proposal, which was built against
+  a baseline the error just proved is stale.
+- **Tenant isolation as two layers, not one.** The chosen model
+  (row-level: shared tables + `tenant_id`, enforced by RLS) is real on
+  both ends. `createPostgresShell(pool, tenantId)` is constructed once
+  per hospital — tenancy is a construction-time concern, never a value
+  threaded through individual `commit`/`readLatest` calls, so no call
+  site can pass the wrong tenant by mistake. Underneath that,
+  `xhis_shell_commits`/`xhis_shell_audit` both have Postgres
+  row-level-security policies comparing against
+  `current_setting('app.tenant_id', true)`, with
+  `FORCE ROW LEVEL SECURITY` also set — easy to miss, but without it a
+  table's owner (commonly the same role an application connects as)
+  bypasses RLS entirely regardless of any policy. The `true` argument
+  to `current_setting` makes an unset tenant resolve to `NULL`, and
+  `tenant_id = NULL` is never true — a query that forgot to scope
+  itself fails closed (sees nothing) rather than leaking every
+  tenant's rows.
+- **Making that setting actually safe under connection pooling.**
+  Scoping `app.tenant_id` has to be transaction-local, or a pooled
+  connection would leak one caller's tenant into whichever caller next
+  reuses that same physical connection — a real cross-tenant leak, not
+  a hypothetical one, given pooling's entire point is reusing
+  connections across callers. `tenantTransaction.ts`'s
+  `withTenantConnection` checks out one dedicated client, runs `BEGIN`,
+  scopes the tenant via `SELECT set_config('app.tenant_id', $1, true)`
+  (not a literal `SET LOCAL app.tenant_id = $1` — Postgres's `SET`
+  statement does not accept a bound parameter there, and interpolating
+  `tenantId` directly into SQL would be a SQL-injection hole in
+  precisely the one place that is supposed to be the isolation
+  boundary), runs the real query, and commits or rolls back — every
+  one of `createPostgresShell`'s three methods goes through this.
+- **Proven empirically where that was possible; honestly not where it
+  wasn't.** No Postgres instance (and no Docker) was available in the
+  environment this was built in. `packages/postgres-shell/tests/
+  postgresShell.test.ts` and `tenantTransaction.test.ts` prove the
+  shell's own logic — version bookkeeping, the conflict-to-error
+  translation, per-tenant isolation, commit/rollback behavior — against
+  a hand-rolled, in-memory fake of `pg.Pool`
+  (`tests/support/fakePgPool.ts`) built to faithfully reproduce the one
+  thing that actually matters here: a real `23505` unique-violation on
+  a conflicting `(tenant_id, version)` insert. What that fake
+  structurally cannot prove — that the RLS policies really block a
+  cross-tenant read, that `FORCE ROW LEVEL SECURITY` really binds the
+  table owner, that a real two-*connection* race resolves the way a
+  single-threaded JS fake forces it to — is covered by
+  `postgresShellIntegration.test.ts`, gated behind an
+  `XHIS_POSTGRES_TEST_URL` environment variable and `describe.skipIf`,
+  and has **not** actually been run against a live database as part of
+  building this. 20 unit tests pass; the 2 integration tests report as
+  skipped, not passing, and should be read that way.
+- **What this does not yet do.** No migration tooling beyond
+  `ensureSchema` (idempotent `CREATE TABLE IF NOT EXISTS` plus a
+  drop-and-recreate for the two policies, safe to call on every
+  process startup, but not a real migration history). No connection
+  retry/backoff policy — a transient network failure surfaces as a
+  rejected `Promise` with no special handling, the same as any other
+  shell failure. No per-hospital `pg.Pool` sizing guidance. None of
+  these are concurrency or isolation concerns the way the two points
+  above are — they're the normal operational hardening any real
+  database-backed service needs, deliberately left to whoever actually
+  deploys this against hospital infrastructure, the same way
+  `createFileShell`'s own doc comment leaves retention policy and
+  encryption-at-rest to the deployment, not the shell.

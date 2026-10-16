@@ -1,0 +1,30 @@
+{
+  "name": "@xhis/postgres-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A real, multi-writer-safe ImperativeShell backed by a shared Postgres cluster -- row-level tenancy via tenant_id + RLS, optimistic concurrency via a UNIQUE(tenant_id, version) constraint. Built only on @xhis/core's public export surface, same as @xhis/xguard; @xhis/core itself stays dependency-free.",
+  "dependencies": {
+    "@xhis/core": "^0.1.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "npm run build --workspace=@xhis/core",
+    "build": "tsc",
+    "pretypecheck": "npm run build --workspace=@xhis/core",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
+    "pretest": "npm run build --workspace=@xhis/core",
+    "test": "vitest run"
+  }
+}
