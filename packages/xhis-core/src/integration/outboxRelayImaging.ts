@@ -25,8 +25,8 @@ export type PatientImagingReactor = (
  * needed to durably persist an imaging reaction and re-validate it
  * against reality before each commit. */
 export interface ImagingCommitter {
-  commit(context: ImagingContext, effects: readonly ImagingEffect[]): void;
-  readLatest(): ImagingContext | undefined;
+  commit(context: ImagingContext, effects: readonly ImagingEffect[]): void | Promise<void>;
+  readLatest(): ImagingContext | undefined | Promise<ImagingContext | undefined>;
 }
 
 export interface RelayPatientEffectsToImagingResult {
@@ -50,7 +50,7 @@ export interface RelayPatientEffectsToImagingResult {
  * left to cancel, the same reasoning `patientToLab.ts`'s discharge case
  * already relies on.
  */
-export function relayPatientEffectsToImaging(
+export async function relayPatientEffectsToImaging(
   patientCommitsFile: string,
   cursor: OutboxCursor,
   imagingCommitter: ImagingCommitter,
@@ -58,7 +58,7 @@ export function relayPatientEffectsToImaging(
   imagingContext: ImagingContext,
   timestamp: IsoTimestamp,
   react: PatientImagingReactor = reactToPatientEffectsForImaging,
-): RelayPatientEffectsToImagingResult {
+): Promise<RelayPatientEffectsToImagingResult> {
   return relayEffects<PatientContext, PatientEffect, ImagingContext, PatientImagingReactionOutcome, ImagingEffect>(
     (fromIndex) => readCommits<PatientContext, PatientEffect>(patientCommitsFile).slice(fromIndex),
     cursor,

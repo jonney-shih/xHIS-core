@@ -41,7 +41,7 @@ const proposal: PlanProposal<BedInstruction> = {
  * work with, the same way `bedVerifier`'s own tests already do.
  */
 describe('bed domain approval flow, end to end', () => {
-  it('a bed assignment is not exempt from risk-tiered human approval, and commits only once a permitted identity approves', () => {
+  it('a bed assignment is not exempt from risk-tiered human approval, and commits only once a permitted identity approves', async () => {
     const doOutcome = bedEngine.executeSequence(emptyBedContext, proposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -83,7 +83,7 @@ describe('bed domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<BedContext, BedInstruction, BedEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -101,7 +101,7 @@ describe('bed domain approval flow, end to end', () => {
     });
   });
 
-  it('an unresolved (impersonated) approval leaves a bed assignment awaiting approval, never committed', () => {
+  it('an unresolved (impersonated) approval leaves a bed assignment awaiting approval, never committed', async () => {
     const doOutcome = bedEngine.executeSequence(emptyBedContext, proposal.instructions);
     const decision = bedVerifier.verify(proposal);
 
@@ -114,7 +114,7 @@ describe('bed domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<BedContext, BedInstruction, BedEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

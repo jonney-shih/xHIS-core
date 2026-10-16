@@ -135,7 +135,7 @@ describe('CDSS nursing-revocation planning path, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -185,7 +185,7 @@ describe('CDSS nursing-revocation planning path, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

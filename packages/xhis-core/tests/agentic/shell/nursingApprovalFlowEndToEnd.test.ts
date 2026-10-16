@@ -78,7 +78,7 @@ const grantProposal: PlanProposal<NursingInstruction> = {
  * already exercises.
  */
 describe('nursing domain approval flow, end to end', () => {
-  it('a credentialing-officer may approve an IssueCredential (review-required), and it commits', () => {
+  it('a credentialing-officer may approve an IssueCredential (review-required), and it commits', async () => {
     const doOutcome = nursingEngine.executeSequence(emptyNursingContext, issueProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -104,7 +104,7 @@ describe('nursing domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: issueProposal,
       doOutcome,
       decision,
@@ -119,7 +119,7 @@ describe('nursing domain approval flow, end to end', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', approval: { approverId: 'officer-tsai', approverRole: 'credentialing-officer' } });
   });
 
-  it('the same credentialing-officer may NOT approve a GrantRole (approval-required) — chief-medical-officer-only, and nothing commits', () => {
+  it('the same credentialing-officer may NOT approve a GrantRole (approval-required) — chief-medical-officer-only, and nothing commits', async () => {
     const doOutcome = nursingEngine.executeSequence(contextWithActiveCredential, grantProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -141,7 +141,7 @@ describe('nursing domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: grantProposal,
       doOutcome,
       decision,
@@ -154,7 +154,7 @@ describe('nursing domain approval flow, end to end', () => {
     expect(shell.commits).toHaveLength(0);
   });
 
-  it('a chief-medical-officer may approve the same GrantRole a credentialing-officer could not, and it commits', () => {
+  it('a chief-medical-officer may approve the same GrantRole a credentialing-officer could not, and it commits', async () => {
     const doOutcome = nursingEngine.executeSequence(contextWithActiveCredential, grantProposal.instructions);
     const decision = nursingVerifier.verify(grantProposal);
     if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
@@ -169,7 +169,7 @@ describe('nursing domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: grantProposal,
       doOutcome,
       decision,

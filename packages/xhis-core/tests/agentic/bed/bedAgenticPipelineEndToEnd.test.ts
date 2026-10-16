@@ -25,7 +25,7 @@ describe('bed agentic pipeline, end to end', () => {
     beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } },
   };
 
-  it('a raw untrusted AssignBed candidate flows through validation, Do, Check, approval, and Act to a real commit', () => {
+  it('a raw untrusted AssignBed candidate flows through validation, Do, Check, approval, and Act to a real commit', async () => {
     const proposalResult = toPlanProposal<BedInstruction>(
       bedInstructionValidators,
       {
@@ -62,7 +62,7 @@ describe('bed agentic pipeline, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<BedContext, BedInstruction, BedEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -81,7 +81,7 @@ describe('bed agentic pipeline, end to end', () => {
     });
   });
 
-  it('a malformed candidate never becomes a PlanProposal at all', () => {
+  it('a malformed candidate never becomes a PlanProposal at all', async () => {
     const proposalResult = toPlanProposal<BedInstruction>(
       bedInstructionValidators,
       {
@@ -96,7 +96,7 @@ describe('bed agentic pipeline, end to end', () => {
     expect(proposalResult.ok).toBe(false);
   });
 
-  it('a physician cannot approve AssignBed — bed review-required needs charge-nurse or bed-coordinator, not physician', () => {
+  it('a physician cannot approve AssignBed — bed review-required needs charge-nurse or bed-coordinator, not physician', async () => {
     const assignBed: BedInstruction = {
       kind: 'AssignBed',
       bedId: bedId('bed-1'),
@@ -127,7 +127,7 @@ describe('bed agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<BedContext, BedInstruction, BedEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

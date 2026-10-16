@@ -50,11 +50,11 @@ describe('act() against createSqliteShell', () => {
     return patientEngine.executeSequence(ctx, proposal.instructions);
   }
 
-  it('commits to the database and writes a matching audit record when Check accepts', () => {
+  it('commits to the database and writes a matching audit record when Check accepts', async () => {
     const shell = createSqliteShell<PatientContext, PatientInstruction, PatientEffect>(databasePath);
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
@@ -70,11 +70,11 @@ describe('act() against createSqliteShell', () => {
     expect(readSqliteAuditLog(databasePath)[0]).toMatchObject({ commitOutcome: 'committed' });
   });
 
-  it('writes an audit record but nothing to the commits table when Check rejects', () => {
+  it('writes an audit record but nothing to the commits table when Check rejects', async () => {
     const shell = createSqliteShell<PatientContext, PatientInstruction, PatientEffect>(databasePath);
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['business rule violated'] },
@@ -89,7 +89,7 @@ describe('act() against createSqliteShell', () => {
     expect(readSqliteAuditLog(databasePath)).toHaveLength(1);
   });
 
-  it('re-derives against readLatest() before committing, the same OCC guarantee proven for every other ImperativeShell', () => {
+  it('re-derives against readLatest() before committing, the same OCC guarantee proven for every other ImperativeShell', async () => {
     const shell = createSqliteShell<PatientContext, PatientInstruction, PatientEffect>(databasePath);
 
     // Something else commits directly to the same database first --
@@ -100,7 +100,7 @@ describe('act() against createSqliteShell', () => {
     );
 
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions); // dry-run against the now-stale emptyContext
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },

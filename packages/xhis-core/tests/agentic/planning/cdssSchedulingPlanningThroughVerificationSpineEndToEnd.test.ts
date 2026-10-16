@@ -118,7 +118,7 @@ describe('a CDSS-sourced scheduling proposal, Checked through the verification s
       decision: inlineDecision,
     });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -154,7 +154,7 @@ describe('a CDSS-sourced scheduling proposal, Checked through the verification s
     const proposalId = proposalLog.append(proposal);
     await verifyWithAllSchedulingWorkers(proposalLog, recordStore);
 
-    const schedulerResults = runScheduler({
+    const schedulerResults = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -181,8 +181,8 @@ describe('a CDSS-sourced scheduling proposal, Checked through the verification s
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const latest = shell.readLatest() ?? contextWithScheduledBooking;
-    const finalOutcome = act(shell, {
+    const latest = (await shell.readLatest()) ?? contextWithScheduledBooking;
+    const finalOutcome = await act(shell, {
       proposal,
       doOutcome: schedulingEngine.executeSequence(latest, proposal.instructions),
       decision: decision.decision,

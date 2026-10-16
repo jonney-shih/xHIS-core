@@ -35,8 +35,8 @@ export type PatientBedReactor = (
  * satisfies this structurally — it just has one method (`recordAudit`)
  * more than this needs. */
 export interface BedCommitter {
-  commit(context: BedContext, effects: readonly BedEffect[]): void;
-  readLatest(): BedContext | undefined;
+  commit(context: BedContext, effects: readonly BedEffect[]): void | Promise<void>;
+  readLatest(): BedContext | undefined | Promise<BedContext | undefined>;
 }
 
 export interface RelayPatientEffectsToBedResult {
@@ -82,7 +82,7 @@ export interface RelayPatientEffectsToBedResult {
  * it: closing `react` over `bedEngine`/`strategy`/`timestamp` so
  * `relayEffects` never needs to know bed exists.
  */
-export function relayPatientEffectsToBed(
+export async function relayPatientEffectsToBed(
   patientCommitsFile: string,
   cursor: OutboxCursor,
   bedCommitter: BedCommitter,
@@ -91,7 +91,7 @@ export function relayPatientEffectsToBed(
   strategy: BedSelectionStrategy,
   timestamp: IsoTimestamp,
   react: PatientBedReactor = reactToPatientEffects,
-): RelayPatientEffectsToBedResult {
+): Promise<RelayPatientEffectsToBedResult> {
   return relayEffects<PatientContext, PatientEffect, BedContext, PatientBedReactionOutcome, BedEffect>(
     (fromIndex) => readCommits<PatientContext, PatientEffect>(patientCommitsFile).slice(fromIndex),
     cursor,

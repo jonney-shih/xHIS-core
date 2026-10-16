@@ -148,7 +148,7 @@ describe('the patient domain Checked through the verification spine reaches the 
       decision: inlineDecision,
     });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -196,7 +196,7 @@ describe('the patient domain Checked through the verification spine reaches the 
     const proposalId = proposalLog.append(proposal);
     await verifyWithAllPatientWorkers(proposalLog, recordStore);
 
-    const schedulerResults = runScheduler({
+    const schedulerResults = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -221,8 +221,8 @@ describe('the patient domain Checked through the verification spine reaches the 
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const latest = shell.readLatest() ?? emptyPatientContext;
-    const finalOutcome = act(shell, {
+    const latest = (await shell.readLatest()) ?? emptyPatientContext;
+    const finalOutcome = await act(shell, {
       proposal,
       doOutcome: patientEngine.executeSequence(latest, proposal.instructions),
       decision: decision.decision,

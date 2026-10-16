@@ -59,12 +59,12 @@ function commitPatientInstructions(context: PatientContext, instructions: readon
 }
 
 describe('relayPatientEffectsToBed', () => {
-  it('processes a durably committed admission and durably commits the bed assignment', () => {
+  it('processes a durably committed admission and durably commits the bed assignment', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
 
-    const result = relayPatientEffectsToBed(
+    const result = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       bedShell(),
@@ -79,16 +79,16 @@ describe('relayPatientEffectsToBed', () => {
     expect(readCommits(bedCommitsFile)).toHaveLength(1);
   });
 
-  it('running again with no new patient commits processes nothing new', () => {
+  it('running again with no new patient commits processes nothing new', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
 
     const cursor = createFileOutboxCursor(cursorFile);
-    const first = relayPatientEffectsToBed(patientCommitsFile, cursor, bedShell(), bedEngine, emptyBedContext, EXAMPLE_firstAvailableBedStrategy, bedIsoTimestamp('2026-07-18T00:01:00.000Z'));
+    const first = await relayPatientEffectsToBed(patientCommitsFile, cursor, bedShell(), bedEngine, emptyBedContext, EXAMPLE_firstAvailableBedStrategy, bedIsoTimestamp('2026-07-18T00:01:00.000Z'));
 
     // A fresh cursor/shell instance, as a restarted process would create.
-    const second = relayPatientEffectsToBed(
+    const second = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       bedShell(),
@@ -103,18 +103,18 @@ describe('relayPatientEffectsToBed', () => {
     expect(readCommits(bedCommitsFile)).toHaveLength(1); // still just the one commit from `first`
   });
 
-  it('a later run picks up only the new patient commit, not the one already processed', () => {
+  it('a later run picks up only the new patient commit, not the one already processed', async () => {
     let patientContext: PatientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
 
-    const afterAdmission = relayPatientEffectsToBed(patientCommitsFile, createFileOutboxCursor(cursorFile), bedShell(), bedEngine, emptyBedContext, EXAMPLE_firstAvailableBedStrategy, bedIsoTimestamp('2026-07-18T00:01:00.000Z'));
+    const afterAdmission = await relayPatientEffectsToBed(patientCommitsFile, createFileOutboxCursor(cursorFile), bedShell(), bedEngine, emptyBedContext, EXAMPLE_firstAvailableBedStrategy, bedIsoTimestamp('2026-07-18T00:01:00.000Z'));
 
     patientContext = commitPatientInstructions(patientContext, [
       { kind: 'DischargePatient', encounterId: encounterId('encounter-1'), dischargedAt: isoTimestamp('2026-07-19T00:00:00.000Z') },
     ]);
 
-    const afterDischarge = relayPatientEffectsToBed(
+    const afterDischarge = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       bedShell(),
@@ -129,13 +129,13 @@ describe('relayPatientEffectsToBed', () => {
     expect(readCommits(bedCommitsFile)).toHaveLength(2);
   });
 
-  it('safely redelivers an already-processed admission if the cursor is ever behind where bed state actually is', () => {
+  it('safely redelivers an already-processed admission if the cursor is ever behind where bed state actually is', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
 
     const shell = bedShell();
-    const first = relayPatientEffectsToBed(patientCommitsFile, createFileOutboxCursor(cursorFile), shell, bedEngine, emptyBedContext, EXAMPLE_firstAvailableBedStrategy, bedIsoTimestamp('2026-07-18T00:01:00.000Z'));
+    const first = await relayPatientEffectsToBed(patientCommitsFile, createFileOutboxCursor(cursorFile), shell, bedEngine, emptyBedContext, EXAMPLE_firstAvailableBedStrategy, bedIsoTimestamp('2026-07-18T00:01:00.000Z'));
     expect(first.outcomes).toEqual([{ kind: 'assigned', encounterId: 'encounter-1', bedId: 'bed-1' }]);
 
     // Simulate the worst case this pattern is meant to survive: the
@@ -145,7 +145,7 @@ describe('relayPatientEffectsToBed', () => {
     // assigned. Redelivering the same admission must not grab a second
     // bed for it.
     const resetCursor = createFileOutboxCursor(join(dir, 'cursor-reset.jsonl'));
-    const redelivered = relayPatientEffectsToBed(
+    const redelivered = await relayPatientEffectsToBed(
       patientCommitsFile,
       resetCursor,
       shell,
@@ -160,14 +160,14 @@ describe('relayPatientEffectsToBed', () => {
     expect(redelivered.context.beds['bed-2'].status).toBe('available'); // never touched
   });
 
-  it('advances the cursor even when a reaction cannot be applied, so one stuck entry does not block later ones', () => {
+  it('advances the cursor even when a reaction cannot be applied, so one stuck entry does not block later ones', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
     ]);
 
     const noBedsAvailable: BedContext = { beds: {} };
 
-    const result = relayPatientEffectsToBed(
+    const result = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       bedShell(),
@@ -182,7 +182,7 @@ describe('relayPatientEffectsToBed', () => {
     expect(readCommits(bedCommitsFile)).toEqual([]); // nothing to commit — no bed effect was produced
   });
 
-  it('composes with a saga-wrapped reactor: a compensated batch still durably commits its net effect and still advances the cursor', () => {
+  it('composes with a saga-wrapped reactor: a compensated batch still durably commits its net effect and still advances the cursor', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-18T00:00:00.000Z') },
       { kind: 'AdmitPatient', patientId: patientId('patient-2'), encounterId: encounterId('encounter-2'), admittedAt: isoTimestamp('2026-07-18T00:05:00.000Z') },
@@ -190,7 +190,7 @@ describe('relayPatientEffectsToBed', () => {
 
     const oneAvailableBed: BedContext = { beds: { 'bed-1': { bedId: bedId('bed-1'), status: 'available' } } };
 
-    const result = relayPatientEffectsToBed(
+    const result = await relayPatientEffectsToBed(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       bedShell(),

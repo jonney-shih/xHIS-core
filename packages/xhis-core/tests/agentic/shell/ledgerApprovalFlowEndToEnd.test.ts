@@ -81,7 +81,7 @@ const reverseProposal: PlanProposal<LedgerInstruction> = {
  * already exercises.
  */
 describe('ledger domain approval flow, end to end', () => {
-  it('a billing-clerk may approve a PostEntry (review-required), and it commits', () => {
+  it('a billing-clerk may approve a PostEntry (review-required), and it commits', async () => {
     const doOutcome = ledgerEngine.executeSequence(emptyLedgerContext, postProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -107,7 +107,7 @@ describe('ledger domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: postProposal,
       doOutcome,
       decision,
@@ -122,7 +122,7 @@ describe('ledger domain approval flow, end to end', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', approval: { approverId: 'clerk-tan', approverRole: 'billing-clerk' } });
   });
 
-  it('the same billing-clerk may NOT approve a ReverseEntry (approval-required) — finance-controller-only, and nothing commits', () => {
+  it('the same billing-clerk may NOT approve a ReverseEntry (approval-required) — finance-controller-only, and nothing commits', async () => {
     const doOutcome = ledgerEngine.executeSequence(postedContext, reverseProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -144,7 +144,7 @@ describe('ledger domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: reverseProposal,
       doOutcome,
       decision,
@@ -157,7 +157,7 @@ describe('ledger domain approval flow, end to end', () => {
     expect(shell.commits).toHaveLength(0);
   });
 
-  it('a finance-controller may approve the same ReverseEntry a billing-clerk could not, and it commits', () => {
+  it('a finance-controller may approve the same ReverseEntry a billing-clerk could not, and it commits', async () => {
     const doOutcome = ledgerEngine.executeSequence(postedContext, reverseProposal.instructions);
     const decision = ledgerVerifier.verify(reverseProposal);
     if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
@@ -172,7 +172,7 @@ describe('ledger domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: reverseProposal,
       doOutcome,
       decision,

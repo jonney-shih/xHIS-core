@@ -61,7 +61,7 @@ function recordingCommitter(): { committer: LabCommitter; commits: readonly (rea
 }
 
 describe('reactToExternalLabResultMessage', () => {
-  it('reports the result and returns the effect, with no idempotency check at all', () => {
+  it('reports the result and returns the effect, with no idempotency check at all', async () => {
     const result = reactToExternalLabResultMessage(labEngine, contextWithPendingOrder, message);
 
     expect(result.outcome).toEqual({ kind: 'ingested', orderId: 'order-1' });
@@ -71,7 +71,7 @@ describe('reactToExternalLabResultMessage', () => {
     ]);
   });
 
-  it('reports ingestion-failed, not a thrown error, for a message referencing an order that does not exist', () => {
+  it('reports ingestion-failed, not a thrown error, for a message referencing an order that does not exist', async () => {
     const result = reactToExternalLabResultMessage(labEngine, { orders: {} }, message);
 
     expect(result.outcome).toEqual({ kind: 'ingestion-failed', orderId: 'order-1', error: { kind: 'LabOrderNotFound', orderId: 'order-1' } });
@@ -80,44 +80,44 @@ describe('reactToExternalLabResultMessage', () => {
 });
 
 describe('ingestExternalLabResult', () => {
-  it('ingests a new message, committing the effect and marking the message processed', () => {
+  it('ingests a new message, committing the effect and marking the message processed', async () => {
     const store = createFileMessageIdempotencyStore(storeFile);
     const { committer, commits } = recordingCommitter();
 
-    const result = ingestExternalLabResult(store, committer, labEngine, contextWithPendingOrder, message);
+    const result = await ingestExternalLabResult(store, committer, labEngine, contextWithPendingOrder, message);
 
     expect(result.outcome).toEqual({ kind: 'ingested', orderId: 'order-1' });
     expect(commits).toHaveLength(1);
     expect(store.hasProcessed('msg-1')).toBe(true);
   });
 
-  it('is idempotent: redelivering the identical message is recognized as a duplicate before touching lab state again', () => {
+  it('is idempotent: redelivering the identical message is recognized as a duplicate before touching lab state again', async () => {
     const store = createFileMessageIdempotencyStore(storeFile);
     const { committer, commits } = recordingCommitter();
 
-    const first = ingestExternalLabResult(store, committer, labEngine, contextWithPendingOrder, message);
+    const first = await ingestExternalLabResult(store, committer, labEngine, contextWithPendingOrder, message);
     expect(first.outcome).toEqual({ kind: 'ingested', orderId: 'order-1' });
 
-    const second = ingestExternalLabResult(store, committer, labEngine, first.context, message);
+    const second = await ingestExternalLabResult(store, committer, labEngine, first.context, message);
 
     expect(second.outcome).toEqual({ kind: 'duplicate', messageControlId: 'msg-1' });
     expect(second.context).toBe(first.context); // never touched a second time, not just equal
     expect(commits).toHaveLength(1); // only the first call committed anything
   });
 
-  it('recognizes the same message as a duplicate even from a freshly constructed store — a restarted receiver process', () => {
+  it('recognizes the same message as a duplicate even from a freshly constructed store — a restarted receiver process', async () => {
     const store = createFileMessageIdempotencyStore(storeFile);
     const { committer } = recordingCommitter();
 
-    const first = ingestExternalLabResult(store, committer, labEngine, contextWithPendingOrder, message);
+    const first = await ingestExternalLabResult(store, committer, labEngine, contextWithPendingOrder, message);
 
     const restartedStore = createFileMessageIdempotencyStore(storeFile);
-    const second = ingestExternalLabResult(restartedStore, committer, labEngine, first.context, message);
+    const second = await ingestExternalLabResult(restartedStore, committer, labEngine, first.context, message);
 
     expect(second.outcome).toEqual({ kind: 'duplicate', messageControlId: 'msg-1' });
   });
 
-  it('falls back to the domain\'s own duplicate-rejection if the idempotency store is ever behind what was actually committed', () => {
+  it('falls back to the domain\'s own duplicate-rejection if the idempotency store is ever behind what was actually committed', async () => {
     // Simulates a crash between committing the effect and marking the
     // message processed: react and commit happen directly, bypassing
     // `ingestExternalLabResult` entirely, so `store.markProcessed` never
@@ -133,7 +133,7 @@ describe('ingestExternalLabResult', () => {
     // Redelivery: the store still says "not processed," so this tries
     // the domain operation again for real, rather than trusting the
     // (in this scenario, incorrect) store state.
-    const redelivered = ingestExternalLabResult(store, committer, labEngine, reaction.context, message);
+    const redelivered = await ingestExternalLabResult(store, committer, labEngine, reaction.context, message);
 
     expect(redelivered.outcome).toEqual({
       kind: 'ingestion-failed',
@@ -144,7 +144,7 @@ describe('ingestExternalLabResult', () => {
 });
 
 describe('ingestExternalLabResult re-validates against the real lab state before committing', () => {
-  it('a direct cancellation of an unrelated order is not erased when a result is ingested from a stale snapshot', () => {
+  it('a direct cancellation of an unrelated order is not erased when a result is ingested from a stale snapshot', async () => {
     const store = createFileMessageIdempotencyStore(storeFile);
     const { committer } = recordingCommitter();
 
@@ -183,7 +183,7 @@ describe('ingestExternalLabResult re-validates against the real lab state before
     // An external result for order-1 arrives, but the caller's
     // `labContext` argument predates the cancellation above — exactly
     // what a receiver holding an earlier snapshot would pass.
-    const result = ingestExternalLabResult(store, committer, labEngine, contextWithTwoPendingOrders, message);
+    const result = await ingestExternalLabResult(store, committer, labEngine, contextWithTwoPendingOrders, message);
 
     expect(result.outcome).toEqual({ kind: 'ingested', orderId: 'order-1' });
 

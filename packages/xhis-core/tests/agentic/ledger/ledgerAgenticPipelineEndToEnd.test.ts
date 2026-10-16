@@ -22,7 +22,7 @@ import type { LedgerContext, LedgerEffect, LedgerInstruction } from '../../../sr
 describe('ledger agentic pipeline, end to end', () => {
   const emptyLedgerContext: LedgerContext = { accounts: {}, entries: {} };
 
-  it('a raw untrusted PostEntry candidate flows through validation, Do, Check, approval, and Act to a real commit', () => {
+  it('a raw untrusted PostEntry candidate flows through validation, Do, Check, approval, and Act to a real commit', async () => {
     const proposalResult = toPlanProposal<LedgerInstruction>(
       ledgerInstructionValidators,
       {
@@ -70,7 +70,7 @@ describe('ledger agentic pipeline, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -90,7 +90,7 @@ describe('ledger agentic pipeline, end to end', () => {
     });
   });
 
-  it('a malformed candidate never becomes a PlanProposal at all', () => {
+  it('a malformed candidate never becomes a PlanProposal at all', async () => {
     const proposalResult = toPlanProposal<LedgerInstruction>(
       ledgerInstructionValidators,
       {
@@ -105,7 +105,7 @@ describe('ledger agentic pipeline, end to end', () => {
     expect(proposalResult.ok).toBe(false);
   });
 
-  it('a billing-clerk cannot approve ReverseEntry — only finance-controller satisfies its (higher) tier', () => {
+  it('a billing-clerk cannot approve ReverseEntry — only finance-controller satisfies its (higher) tier', async () => {
     const postedEntryId = entryId('entry-1');
     const reverseEntry: LedgerInstruction = {
       kind: 'ReverseEntry',
@@ -155,7 +155,7 @@ describe('ledger agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

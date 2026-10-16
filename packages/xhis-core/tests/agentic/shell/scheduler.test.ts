@@ -54,14 +54,14 @@ function newFixtures() {
 const emptyContext: PatientContext = { encounters: {} };
 
 describe('runScheduler', () => {
-  it('acts on a proposal exactly once every required worker has reported accept, committing it', () => {
+  it('acts on a proposal exactly once every required worker has reported accept, committing it', async () => {
     const { proposalLog, recordStore, actedStore, shell } = newFixtures();
     const proposal = admitProposal(1);
     const proposalId = proposalLog.append(proposal);
     recordStore.record({ proposalId, workerId: workerA, decision: { kind: 'accept' }, verifiedAt: isoTimestamp('2026-07-28T00:01:00.000Z') });
     recordStore.record({ proposalId, workerId: workerB, decision: { kind: 'accept' }, verifiedAt: isoTimestamp('2026-07-28T00:01:00.000Z') });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers: [workerA, workerB],
@@ -78,13 +78,13 @@ describe('runScheduler', () => {
     expect(actedStore.hasActed(proposalId)).toBe(true);
   });
 
-  it('does not act while verification is still pending — no audit record, no commit', () => {
+  it('does not act while verification is still pending — no audit record, no commit', async () => {
     const { proposalLog, recordStore, actedStore, shell } = newFixtures();
     const proposalId = proposalLog.append(admitProposal(1));
     recordStore.record({ proposalId, workerId: workerA, decision: { kind: 'accept' }, verifiedAt: isoTimestamp('2026-07-28T00:01:00.000Z') });
     // worker-b never reports.
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers: [workerA, workerB],
@@ -101,7 +101,7 @@ describe('runScheduler', () => {
     expect(actedStore.hasActed(proposalId)).toBe(false);
   });
 
-  it('resolves and acts the moment one worker rejects, writing a rejected audit record without ever committing', () => {
+  it('resolves and acts the moment one worker rejects, writing a rejected audit record without ever committing', async () => {
     const { proposalLog, recordStore, actedStore, shell } = newFixtures();
     const proposalId = proposalLog.append(admitProposal(1));
     recordStore.record({
@@ -112,7 +112,7 @@ describe('runScheduler', () => {
     });
     // worker-b never reports — the reject short-circuits, so this must not matter.
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers: [workerA, workerB],
@@ -128,7 +128,7 @@ describe('runScheduler', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'rejected', reasons: ['leaked id'] });
   });
 
-  it('marks a proposal acted on an awaiting-approval outcome too, and never calls act on it again itself', () => {
+  it('marks a proposal acted on an awaiting-approval outcome too, and never calls act on it again itself', async () => {
     const { proposalLog, recordStore, actedStore, shell } = newFixtures();
     const proposalId = proposalLog.append(admitProposal(1));
     recordStore.record({
@@ -149,14 +149,14 @@ describe('runScheduler', () => {
       recordedAt: '2026-07-28T00:02:00.000Z',
     };
 
-    const firstRun = runScheduler(input);
+    const firstRun = await runScheduler(input);
     expect(firstRun).toEqual([{ proposalId, outcome: 'awaiting-approval' }]);
     expect(shell.auditLog).toHaveLength(1);
 
     // A later poll must not re-act on it — the human-approval loop-back
     // is a separate caller's job (see runScheduler's own doc comment),
     // not this polling loop retrying itself.
-    const secondRun = runScheduler(input);
+    const secondRun = await runScheduler(input);
     expect(secondRun).toEqual([]);
     expect(shell.auditLog).toHaveLength(1);
   });
@@ -172,7 +172,7 @@ describe('runScheduler', () => {
    * could not represent "2 is done, 1 is not" — this is exactly why it's
    * a membership set.
    */
-  it('acts on a later proposal that resolves before an earlier still-pending one, without getting stuck behind it', () => {
+  it('acts on a later proposal that resolves before an earlier still-pending one, without getting stuck behind it', async () => {
     const { proposalLog, recordStore, actedStore, shell } = newFixtures();
     const firstProposalId = proposalLog.append(admitProposal(1));
     const secondProposalId = proposalLog.append(admitProposal(2));
@@ -198,7 +198,7 @@ describe('runScheduler', () => {
       recordedAt: '2026-07-28T00:02:00.000Z',
     };
 
-    const firstPoll = runScheduler(input);
+    const firstPoll = await runScheduler(input);
     expect(firstPoll).toEqual([{ proposalId: secondProposalId, outcome: 'rejected' }]);
     expect(actedStore.hasActed(firstProposalId)).toBe(false);
     expect(actedStore.hasActed(secondProposalId)).toBe(true);
@@ -206,13 +206,13 @@ describe('runScheduler', () => {
     // worker-b finally reports on proposal 1.
     recordStore.record({ proposalId: firstProposalId, workerId: workerB, decision: { kind: 'accept' }, verifiedAt: isoTimestamp('2026-07-28T00:03:00.000Z') });
 
-    const secondPoll = runScheduler(input);
+    const secondPoll = await runScheduler(input);
     expect(secondPoll).toEqual([{ proposalId: firstProposalId, outcome: 'committed' }]);
     // Proposal 2 is not re-acted on, even though this poll saw it again in the log.
     expect(shell.commits).toHaveLength(1);
   });
 
-  it('end-to-end against the real file-backed stores: a fresh runScheduler pointed at the same files picks up where the last one left off', () => {
+  it('end-to-end against the real file-backed stores: a fresh runScheduler pointed at the same files picks up where the last one left off', async () => {
     const proposalLog = createFileProposalLog<PatientInstruction>(join(dir, 'proposals.jsonl'));
     const recordStore = createFileVerificationRecordStore(join(dir, 'records.jsonl'));
     const shell = createInMemoryShell<PatientContext, PatientInstruction, PatientEffect>();
@@ -221,7 +221,7 @@ describe('runScheduler', () => {
     const proposalId = proposalLog.append(admitProposal(1));
     recordStore.record({ proposalId, workerId: workerA, decision: { kind: 'accept' }, verifiedAt: isoTimestamp('2026-07-28T00:01:00.000Z') });
 
-    runScheduler({
+    await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers: [workerA],
@@ -238,7 +238,7 @@ describe('runScheduler', () => {
     const reopenedActedStore = createFileSchedulerActedStore(actedFile);
     expect(reopenedActedStore.hasActed(proposalId)).toBe(true);
 
-    const secondRun = runScheduler({
+    const secondRun = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers: [workerA],

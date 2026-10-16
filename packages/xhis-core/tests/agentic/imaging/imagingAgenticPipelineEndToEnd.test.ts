@@ -23,7 +23,7 @@ import type { ImagingContext, ImagingEffect, ImagingInstruction } from '../../..
 describe('imaging agentic pipeline, end to end', () => {
   const emptyImagingContext: ImagingContext = { studies: {} };
 
-  it('a raw untrusted OrderStudy candidate flows through validation, Do, Check, approval, and Act to a real commit', () => {
+  it('a raw untrusted OrderStudy candidate flows through validation, Do, Check, approval, and Act to a real commit', async () => {
     const proposalResult = toPlanProposal<ImagingInstruction>(
       imagingInstructionValidators,
       {
@@ -62,7 +62,7 @@ describe('imaging agentic pipeline, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<ImagingContext, ImagingInstruction, ImagingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -81,7 +81,7 @@ describe('imaging agentic pipeline, end to end', () => {
     });
   });
 
-  it('a malformed candidate never becomes a PlanProposal at all', () => {
+  it('a malformed candidate never becomes a PlanProposal at all', async () => {
     const proposalResult = toPlanProposal<ImagingInstruction>(
       imagingInstructionValidators,
       {
@@ -96,7 +96,7 @@ describe('imaging agentic pipeline, end to end', () => {
     expect(proposalResult.ok).toBe(false);
   });
 
-  it('a referring physician cannot approve ReportStudy — only a radiologist satisfies its (higher) tier', () => {
+  it('a referring physician cannot approve ReportStudy — only a radiologist satisfies its (higher) tier', async () => {
     const orderedStudyId = studyId('study-1');
     const reportStudy: ImagingInstruction = {
       kind: 'ReportStudy',
@@ -142,7 +142,7 @@ describe('imaging agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<ImagingContext, ImagingInstruction, ImagingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

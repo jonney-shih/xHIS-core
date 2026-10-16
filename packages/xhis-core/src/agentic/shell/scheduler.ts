@@ -112,10 +112,18 @@ export interface RunSchedulerInput<TCtx, TInstruction extends Kinded, TEffect, T
  * scheduler marking it acted-and-done is exactly what that instruction
  * requires, not a shortcut around it. Retrying `'stale'` here would
  * violate that contract, not fulfill it.
+ *
+ * `async`, for the identical reason `act()` itself is — see that
+ * function's own doc comment in `agentic/shell/act.ts`. Processes
+ * `envelopes` one at a time, in order, awaiting each `act()` call
+ * before moving to the next — not run concurrently, so a shell that
+ * genuinely does need per-call ordering (e.g. one connection, one
+ * transaction at a time) never sees two calls in flight at once from
+ * a single `runScheduler` invocation.
  */
-export function runScheduler<TCtx, TInstruction extends Kinded, TEffect, TError>(
+export async function runScheduler<TCtx, TInstruction extends Kinded, TEffect, TError>(
   input: RunSchedulerInput<TCtx, TInstruction, TEffect, TError>,
-): readonly SchedulerOutcome[] {
+): Promise<readonly SchedulerOutcome[]> {
   const { proposalLog, recordStore, requiredWorkers, actedStore, shell, engine, initialContext, recordedAt } = input;
 
   const envelopes = proposalLog.readSince(tick(0));
@@ -131,10 +139,10 @@ export function runScheduler<TCtx, TInstruction extends Kinded, TEffect, TError>
       continue; // not yet -- re-checked on a later poll, without blocking any later proposal in this same run
     }
 
-    const latest = shell.readLatest() ?? initialContext;
+    const latest = (await shell.readLatest()) ?? initialContext;
     const doOutcome = engine.executeSequence(latest, envelope.proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: envelope.proposal,
       doOutcome,
       decision: state.decision,

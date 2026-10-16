@@ -32,11 +32,11 @@ function reexecute(ctx: PatientContext) {
 }
 
 describe('act', () => {
-  it('commits and records an audit entry when Check accepts', () => {
+  it('commits and records an audit entry when Check accepts', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },
@@ -63,11 +63,11 @@ describe('act', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', reasons: [] });
   });
 
-  it('does not commit when Check rejects', () => {
+  it('does not commit when Check rejects', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'reject', reasons: ['business rule violated'] },
@@ -81,11 +81,11 @@ describe('act', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'rejected', reasons: ['business rule violated'] });
   });
 
-  it('is awaiting-approval when Check needs a human and none has decided yet', () => {
+  it('is awaiting-approval when Check needs a human and none has decided yet', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
@@ -99,11 +99,11 @@ describe('act', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'awaiting-approval' });
   });
 
-  it('commits once a human approves', () => {
+  it('commits once a human approves', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
@@ -121,11 +121,11 @@ describe('act', () => {
     });
   });
 
-  it('rejects when a human declines approval', () => {
+  it('rejects when a human declines approval', async () => {
     const shell = newShell();
     const doOutcome = patientEngine.executeSequence(emptyContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'needs-human-approval', reasons: ["risk tier 'approval-required'"] },
@@ -140,7 +140,7 @@ describe('act', () => {
     expect(shell.auditLog[0]?.reasons).toEqual(['rejected by approver dr-chen']);
   });
 
-  it('never commits when the dry run itself failed, regardless of decision', () => {
+  it('never commits when the dry run itself failed, regardless of decision', async () => {
     const shell = newShell();
     const alreadyAdmittedContext: PatientContext = {
       encounters: {
@@ -154,7 +154,7 @@ describe('act', () => {
     };
     const doOutcome = patientEngine.executeSequence(alreadyAdmittedContext, proposal.instructions);
 
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision: { kind: 'accept' },

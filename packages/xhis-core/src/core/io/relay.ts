@@ -24,10 +24,15 @@ export interface ReactionResult<TTargetCtx, TOutcome, TTargetEffect> {
  * `docs/DETERMINISTIC_CORE_PATTERN.md`'s "Resolved: the outbox relay
  * re-validates against reality before each commit" for the gap that
  * left open and what closing it required.
+ *
+ * Both methods may return their plain value or a `Promise` of one,
+ * the identical widening `agentic/shell/shell.ts`'s `ImperativeShell`
+ * documents for the identical reason — a real client-server database
+ * can only ever expose these asynchronously.
  */
 export interface EffectCommitter<TTargetCtx, TTargetEffect> {
-  commit(context: TTargetCtx, effects: readonly TTargetEffect[]): void;
-  readLatest(): TTargetCtx | undefined;
+  commit(context: TTargetCtx, effects: readonly TTargetEffect[]): void | Promise<void>;
+  readLatest(): TTargetCtx | undefined | Promise<TTargetCtx | undefined>;
 }
 
 /**
@@ -79,8 +84,15 @@ export interface EffectCommitter<TTargetCtx, TTargetEffect> {
  * The cursor advances once an entry has been *attempted*, regardless of
  * whether every reaction inside it succeeded — a delivery guarantee, not
  * a success guarantee, so one stuck entry can't block every later one.
+ *
+ * `async`, for the identical reason `act()` is — see that function's
+ * own doc comment in `agentic/shell/act.ts`. Processes entries strictly
+ * one at a time, `await`ing each `readLatest()`/`commit()` pair before
+ * moving to the next, never concurrently — the same reasoning
+ * `runScheduler`'s own doc comment gives for not running its own loop
+ * concurrently either.
  */
-export function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TTargetEffect>(
+export async function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TTargetEffect>(
   readNewCommits: (fromIndex: number) => readonly CommittedBatch<TSourceCtx, TSourceEffect>[],
   cursor: OutboxCursor,
   targetCommitter: EffectCommitter<TTargetCtx, TTargetEffect>,
@@ -89,7 +101,7 @@ export function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TT
     context: TTargetCtx,
     sourceEffects: readonly TSourceEffect[],
   ) => ReactionResult<TTargetCtx, TOutcome, TTargetEffect>,
-): RelayResult<TTargetCtx, TOutcome> {
+): Promise<RelayResult<TTargetCtx, TOutcome>> {
   const startIndex = cursor.read();
   const newCommits = readNewCommits(startIndex);
 
@@ -99,14 +111,14 @@ export function relayEffects<TSourceCtx, TSourceEffect, TTargetCtx, TOutcome, TT
 
   for (let offset = 0; offset < newCommits.length; offset += 1) {
     const commit = newCommits[offset]!;
-    const latest = targetCommitter.readLatest() ?? context;
+    const latest = (await targetCommitter.readLatest()) ?? context;
     const result = react(latest, commit.effects);
 
     context = result.context;
     outcomes.push(...result.outcomes);
 
     if (result.effects.length > 0) {
-      targetCommitter.commit(result.context, result.effects);
+      await targetCommitter.commit(result.context, result.effects);
     }
 
     processedThroughIndex = startIndex + offset + 1;

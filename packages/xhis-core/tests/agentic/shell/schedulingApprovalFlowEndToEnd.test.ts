@@ -72,7 +72,7 @@ const cancelProposal: PlanProposal<SchedulingInstruction> = {
  * approval-flow test already exercises.
  */
 describe('scheduling domain approval flow, end to end', () => {
-  it('a scheduling-coordinator may approve a ScheduleBooking (review-required), and it commits', () => {
+  it('a scheduling-coordinator may approve a ScheduleBooking (review-required), and it commits', async () => {
     const doOutcome = schedulingEngine.executeSequence(emptySchedulingContext, scheduleProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -98,7 +98,7 @@ describe('scheduling domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<SchedulingContext, SchedulingInstruction, SchedulingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: scheduleProposal,
       doOutcome,
       decision,
@@ -113,7 +113,7 @@ describe('scheduling domain approval flow, end to end', () => {
     expect(shell.auditLog[0]).toMatchObject({ commitOutcome: 'committed', approval: { approverId: 'coord-hsu', approverRole: 'scheduling-coordinator' } });
   });
 
-  it('the same scheduling-coordinator may NOT approve a CancelBooking (approval-required) — disjoint tiers, not a hierarchy, and nothing commits', () => {
+  it('the same scheduling-coordinator may NOT approve a CancelBooking (approval-required) — disjoint tiers, not a hierarchy, and nothing commits', async () => {
     const doOutcome = schedulingEngine.executeSequence(scheduledContext, cancelProposal.instructions);
     expect(doOutcome.ok).toBe(true);
 
@@ -135,7 +135,7 @@ describe('scheduling domain approval flow, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<SchedulingContext, SchedulingInstruction, SchedulingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: cancelProposal,
       doOutcome,
       decision,
@@ -148,7 +148,7 @@ describe('scheduling domain approval flow, end to end', () => {
     expect(shell.commits).toHaveLength(0);
   });
 
-  it('an or-director may approve the same CancelBooking a scheduling-coordinator could not, and it commits', () => {
+  it('an or-director may approve the same CancelBooking a scheduling-coordinator could not, and it commits', async () => {
     const doOutcome = schedulingEngine.executeSequence(scheduledContext, cancelProposal.instructions);
     const decision = schedulingVerifier.verify(cancelProposal);
     if (decision.kind !== 'needs-human-approval') throw new Error('expected needs-human-approval');
@@ -163,7 +163,7 @@ describe('scheduling domain approval flow, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<SchedulingContext, SchedulingInstruction, SchedulingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal: cancelProposal,
       doOutcome,
       decision,

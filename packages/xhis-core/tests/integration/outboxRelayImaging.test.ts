@@ -58,7 +58,7 @@ function imagingContextWithTwoPendingStudies(): ImagingContext {
 }
 
 describe('relayPatientEffectsToImaging', () => {
-  it('processes a durably committed discharge and durably commits the cancellations', () => {
+  it('processes a durably committed discharge and durably commits the cancellations', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
@@ -67,7 +67,7 @@ describe('relayPatientEffectsToImaging', () => {
     ]);
     void patientContext;
 
-    const result = relayPatientEffectsToImaging(
+    const result = await relayPatientEffectsToImaging(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       imagingShell(),
@@ -85,15 +85,15 @@ describe('relayPatientEffectsToImaging', () => {
     expect(readCommits(imagingCommitsFile)).toHaveLength(1); // admission produced no imaging commit; discharge produced one
   });
 
-  it('running again with no new patient commits processes nothing new', () => {
+  it('running again with no new patient commits processes nothing new', async () => {
     commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
 
     const cursor = createFileOutboxCursor(cursorFile);
-    const first = relayPatientEffectsToImaging(patientCommitsFile, cursor, imagingShell(), imagingEngine, { studies: {} }, imagingIsoTimestamp('2026-07-21T00:01:00.000Z'));
+    const first = await relayPatientEffectsToImaging(patientCommitsFile, cursor, imagingShell(), imagingEngine, { studies: {} }, imagingIsoTimestamp('2026-07-21T00:01:00.000Z'));
 
-    const second = relayPatientEffectsToImaging(
+    const second = await relayPatientEffectsToImaging(
       patientCommitsFile,
       createFileOutboxCursor(cursorFile),
       imagingShell(),
@@ -106,7 +106,7 @@ describe('relayPatientEffectsToImaging', () => {
     expect(second.processedThroughIndex).toBe(1);
   });
 
-  it('safely redelivers an already-processed discharge: a reset cursor finds nothing left to cancel', () => {
+  it('safely redelivers an already-processed discharge: a reset cursor finds nothing left to cancel', async () => {
     let patientContext = commitPatientInstructions({ encounters: {} }, [
       { kind: 'AdmitPatient', patientId: patientId('patient-1'), encounterId: encounterId('encounter-1'), admittedAt: isoTimestamp('2026-07-21T00:00:00.000Z') },
     ]);
@@ -116,11 +116,11 @@ describe('relayPatientEffectsToImaging', () => {
     void patientContext;
 
     const shell = imagingShell();
-    const first = relayPatientEffectsToImaging(patientCommitsFile, createFileOutboxCursor(cursorFile), shell, imagingEngine, imagingContextWithTwoPendingStudies(), imagingIsoTimestamp('2026-07-22T00:01:00.000Z'));
+    const first = await relayPatientEffectsToImaging(patientCommitsFile, createFileOutboxCursor(cursorFile), shell, imagingEngine, imagingContextWithTwoPendingStudies(), imagingIsoTimestamp('2026-07-22T00:01:00.000Z'));
     expect(first.outcomes).toContainEqual({ kind: 'cancelled', encounterId: 'encounter-1', studyId: 'study-1' });
 
     const resetCursor = createFileOutboxCursor(join(dir, 'cursor-reset.jsonl'));
-    const redelivered = relayPatientEffectsToImaging(
+    const redelivered = await relayPatientEffectsToImaging(
       patientCommitsFile,
       resetCursor,
       shell,

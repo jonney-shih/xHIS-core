@@ -130,7 +130,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LabContext, LabInstruction, LabEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -180,7 +180,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LabContext, LabInstruction, LabEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -204,7 +204,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
    * here is a deterministic rule and the triggering signal is a
    * discharge, not an admission or a bed assignment.
    */
-  it("lab's own vitals-entry-panel suggestion, for the same signal that recommended a cancellation, renders through the real validation gate", () => {
+  it("lab's own vitals-entry-panel suggestion, for the same signal that recommended a cancellation, renders through the real validation gate", async () => {
     const signal: LabDischargeSignal = { encounterId: encounterId('encounter-1'), patientId: patientId('patient-1') };
     const telemetryLog = createInMemoryUiProposalTelemetryLog();
 
@@ -225,7 +225,7 @@ describe('CDSS lab-cancellation planning path, end to end', () => {
     ]);
   });
 
-  it('a vitals-entry-panel candidate missing a required field falls back instead of rendering, even though the source rule is deterministic', () => {
+  it('a vitals-entry-panel candidate missing a required field falls back instead of rendering, even though the source rule is deterministic', async () => {
     const telemetryLog = createInMemoryUiProposalTelemetryLog();
 
     // The same shape suggestVitalsEntryPanel produces, but with

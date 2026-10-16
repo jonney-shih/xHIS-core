@@ -80,22 +80,30 @@ export interface ActInput<TCtx, TInstruction extends Kinded, TEffect, TError> {
  * `combineVerifiers.ts`) only ever looks at the proposal — instructions
  * and rationale — never at context, so nothing about Check's decision can
  * go stale the way Do's context-dependent computation can.
+ *
+ * `async`, returning `Promise<CommitOutcome>` — not because this
+ * function does any I/O itself, but because `shell`'s own `commit`/
+ * `recordAudit`/`readLatest` might (see `shell.ts`'s own doc comment:
+ * a real client-server database can only ever expose those as
+ * `Promise`s). `await`ing a synchronous shell's plain return value is
+ * a no-op, so every existing caller of a synchronous shell keeps
+ * working with nothing more than adding `await` at the call site.
  */
-export function act<TCtx, TInstruction extends Kinded, TEffect, TError>(
+export async function act<TCtx, TInstruction extends Kinded, TEffect, TError>(
   shell: ImperativeShell<TCtx, TInstruction, TEffect>,
   input: ActInput<TCtx, TInstruction, TEffect, TError>,
-): CommitOutcome {
+): Promise<CommitOutcome> {
   const { proposal, doOutcome, decision, baselineContext, reexecute, approval, recordedAt, telemetryTag } = input;
 
-  const finalize = (
+  const finalize = async (
     commitOutcome: CommitOutcome,
     reasons: readonly string[],
     committed?: ExecutionOutcome<TCtx, TEffect>,
-  ): CommitOutcome => {
+  ): Promise<CommitOutcome> => {
     if (committed) {
-      shell.commit(committed.context, committed.effects);
+      await shell.commit(committed.context, committed.effects);
     }
-    shell.recordAudit({
+    await shell.recordAudit({
       proposal,
       decision,
       commitOutcome,
@@ -107,8 +115,8 @@ export function act<TCtx, TInstruction extends Kinded, TEffect, TError>(
     return commitOutcome;
   };
 
-  const commitAfterFreshCheck = (): CommitOutcome => {
-    const latest = shell.readLatest() ?? baselineContext;
+  const commitAfterFreshCheck = async (): Promise<CommitOutcome> => {
+    const latest = (await shell.readLatest()) ?? baselineContext;
     const freshOutcome = reexecute(latest);
 
     if (!freshOutcome.ok) {

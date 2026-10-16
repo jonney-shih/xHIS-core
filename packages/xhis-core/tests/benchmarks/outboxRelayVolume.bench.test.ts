@@ -86,7 +86,7 @@ const HISTORICAL_SIZES = [1_000, 10_000, 50_000, 100_000];
 describe('outbox relay volume', () => {
   it.each(HISTORICAL_SIZES)(
     'cost of reading the log and relaying one new entry with %i historical entries already behind the cursor',
-    (size) => {
+    async (size) => {
       const patientCommitsFile = join(dir, `patient-commits-${size}.jsonl`);
       writeHistoricalCommits(patientCommitsFile, size);
       appendOneNewCommit(patientCommitsFile, size);
@@ -106,7 +106,7 @@ describe('outbox relay volume', () => {
       });
 
       const relayStart = performance.now();
-      const result = relayPatientEffectsToBed(
+      const result = await relayPatientEffectsToBed(
         patientCommitsFile,
         cursor,
         shell,

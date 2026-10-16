@@ -22,7 +22,7 @@ import type { PharmacyContext, PharmacyEffect, PharmacyInstruction } from '../..
 describe('pharmacy agentic pipeline, end to end', () => {
   const emptyPharmacyContext: PharmacyContext = { prescriptions: {} };
 
-  it('a raw untrusted PrescribeMedication candidate flows through validation, Do, Check, approval, and Act to a real commit', () => {
+  it('a raw untrusted PrescribeMedication candidate flows through validation, Do, Check, approval, and Act to a real commit', async () => {
     const proposalResult = toPlanProposal<PharmacyInstruction>(
       pharmacyInstructionValidators,
       {
@@ -59,7 +59,7 @@ describe('pharmacy agentic pipeline, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -78,7 +78,7 @@ describe('pharmacy agentic pipeline, end to end', () => {
     });
   });
 
-  it('a malformed candidate never becomes a PlanProposal at all', () => {
+  it('a malformed candidate never becomes a PlanProposal at all', async () => {
     const proposalResult = toPlanProposal<PharmacyInstruction>(
       pharmacyInstructionValidators,
       {
@@ -93,7 +93,7 @@ describe('pharmacy agentic pipeline, end to end', () => {
     expect(proposalResult.ok).toBe(false);
   });
 
-  it('a nurse cannot approve PrescribeMedication — pharmacy review-required needs physician or pharmacist, not nurse', () => {
+  it('a nurse cannot approve PrescribeMedication — pharmacy review-required needs physician or pharmacist, not nurse', async () => {
     const prescribe: PharmacyInstruction = {
       kind: 'PrescribeMedication',
       prescriptionId: prescriptionId('rx-1'),
@@ -125,7 +125,7 @@ describe('pharmacy agentic pipeline, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<PharmacyContext, PharmacyInstruction, PharmacyEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

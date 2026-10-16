@@ -138,14 +138,14 @@ describe('createExternalVerificationWorker — proving the async branch is genui
 
     // A poll while the external check is still in flight must act on
     // nothing — not commit speculatively, not mark it acted.
-    expect(runScheduler(schedulerInput)).toEqual([]);
+    expect(await runScheduler(schedulerInput)).toEqual([]);
     expect(shell.commits).toHaveLength(0);
 
     deferred.resolve({ kind: 'accept' });
     await runPromise;
 
     // Now that verification has actually resolved, the very next poll acts.
-    expect(runScheduler(schedulerInput)).toEqual([{ proposalId, outcome: 'committed' }]);
+    expect(await runScheduler(schedulerInput)).toEqual([{ proposalId, outcome: 'committed' }]);
     expect(shell.commits).toHaveLength(1);
   });
 });

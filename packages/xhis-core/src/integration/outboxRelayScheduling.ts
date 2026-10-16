@@ -25,8 +25,8 @@ export type PatientSchedulingReactor = (
  * shape needed to durably persist a scheduling reaction and re-validate
  * it against reality before each commit. */
 export interface SchedulingCommitter {
-  commit(context: SchedulingContext, effects: readonly SchedulingEffect[]): void;
-  readLatest(): SchedulingContext | undefined;
+  commit(context: SchedulingContext, effects: readonly SchedulingEffect[]): void | Promise<void>;
+  readLatest(): SchedulingContext | undefined | Promise<SchedulingContext | undefined>;
 }
 
 export interface RelayPatientEffectsToSchedulingResult {
@@ -60,7 +60,7 @@ export interface RelayPatientEffectsToSchedulingResult {
  * shift) is correctly never touched by a relayed discharge either,
  * same as in the in-process reaction.
  */
-export function relayPatientEffectsToScheduling(
+export async function relayPatientEffectsToScheduling(
   patientCommitsFile: string,
   cursor: OutboxCursor,
   schedulingCommitter: SchedulingCommitter,
@@ -68,7 +68,7 @@ export function relayPatientEffectsToScheduling(
   schedulingContext: SchedulingContext,
   timestamp: IsoTimestamp,
   react: PatientSchedulingReactor = reactToPatientEffectsForScheduling,
-): RelayPatientEffectsToSchedulingResult {
+): Promise<RelayPatientEffectsToSchedulingResult> {
   return relayEffects<PatientContext, PatientEffect, SchedulingContext, PatientSchedulingReactionOutcome, SchedulingEffect>(
     (fromIndex) => readCommits<PatientContext, PatientEffect>(patientCommitsFile).slice(fromIndex),
     cursor,

@@ -44,7 +44,7 @@ function reexecuteOf(proposal: PlanProposal<SchedulingInstruction>) {
  * race rather than merely describing it.
  */
 describe('act() re-validates a stale doOutcome against the shell\'s actual latest state before committing', () => {
-  it('a second proposal computed from the same stale snapshot is rejected as stale, not silently committed over the first', () => {
+  it('a second proposal computed from the same stale snapshot is rejected as stale, not silently committed over the first', async () => {
     const shell = newShell();
 
     const proposalA = bookingProposal('booking-a', 'or-1', '2026-07-22T09:00:00.000Z', '2026-07-22T10:00:00.000Z');
@@ -59,7 +59,7 @@ describe('act() re-validates a stale doOutcome against the shell\'s actual lates
     expect(doOutcomeA.ok).toBe(true);
     expect(doOutcomeB.ok).toBe(true);
 
-    const outcomeA = act(shell, {
+    const outcomeA = await act(shell, {
       proposal: proposalA,
       doOutcome: doOutcomeA,
       decision: { kind: 'accept' },
@@ -75,7 +75,7 @@ describe('act() re-validates a stale doOutcome against the shell\'s actual lates
     // against shell.readLatest() (which now has A's booking) right before
     // writing. The overlapping booking-b conflicts with the now-visible
     // booking-a, so re-validation fails.
-    const outcomeB = act(shell, {
+    const outcomeB = await act(shell, {
       proposal: proposalB,
       doOutcome: doOutcomeB,
       decision: { kind: 'accept' },
@@ -95,7 +95,7 @@ describe('act() re-validates a stale doOutcome against the shell\'s actual lates
     expect(shell.auditLog[1]!.reasons[0]).toContain('re-validation against the latest committed state failed');
   });
 
-  it('a second proposal that does not actually conflict still commits, using the freshly recomputed state rather than the stale one', () => {
+  it('a second proposal that does not actually conflict still commits, using the freshly recomputed state rather than the stale one', async () => {
     const shell = newShell();
 
     const proposalA = bookingProposal('booking-a', 'or-1', '2026-07-22T09:00:00.000Z', '2026-07-22T10:00:00.000Z');
@@ -106,7 +106,7 @@ describe('act() re-validates a stale doOutcome against the shell\'s actual lates
     const doOutcomeA = schedulingEngine.executeSequence(emptyContext, proposalA.instructions);
     const doOutcomeC = schedulingEngine.executeSequence(emptyContext, proposalC.instructions);
 
-    act(shell, {
+    await act(shell, {
       proposal: proposalA,
       doOutcome: doOutcomeA,
       decision: { kind: 'accept' },
@@ -115,7 +115,7 @@ describe('act() re-validates a stale doOutcome against the shell\'s actual lates
       recordedAt: '2026-07-22T00:00:01.000Z',
     });
 
-    const outcomeC = act(shell, {
+    const outcomeC = await act(shell, {
       proposal: proposalC,
       doOutcome: doOutcomeC,
       decision: { kind: 'accept' },

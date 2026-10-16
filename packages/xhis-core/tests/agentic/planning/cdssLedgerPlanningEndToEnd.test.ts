@@ -153,7 +153,7 @@ describe('CDSS ledger-reversal planning path, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -203,7 +203,7 @@ describe('CDSS ledger-reversal planning path, end to end', () => {
     expect(resolution.kind).toBe('unresolved');
 
     const shell = createInMemoryShell<LedgerContext, LedgerInstruction, LedgerEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,

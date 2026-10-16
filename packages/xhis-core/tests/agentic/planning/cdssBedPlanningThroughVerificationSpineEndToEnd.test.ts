@@ -104,7 +104,7 @@ describe('a CDSS-sourced bed proposal, Checked through the verification spine, r
       decision: inlineDecision,
     });
 
-    const results = runScheduler({
+    const results = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -139,7 +139,7 @@ describe('a CDSS-sourced bed proposal, Checked through the verification spine, r
     const proposalId = proposalLog.append(proposal);
     await verifyWithAllBedWorkers(proposalLog, recordStore);
 
-    const schedulerResults = runScheduler({
+    const schedulerResults = await runScheduler({
       proposalLog,
       recordStore,
       requiredWorkers,
@@ -166,8 +166,8 @@ describe('a CDSS-sourced bed proposal, Checked through the verification spine, r
     expect(resolution.kind).toBe('resolved');
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
-    const latest = shell.readLatest() ?? contextWithAvailableBed;
-    const finalOutcome = act(shell, {
+    const latest = (await shell.readLatest()) ?? contextWithAvailableBed;
+    const finalOutcome = await act(shell, {
       proposal,
       doOutcome: bedEngine.executeSequence(latest, proposal.instructions),
       decision: decision.decision,

@@ -23,7 +23,7 @@ import type { NursingContext, NursingEffect, NursingInstruction } from '../../..
 describe('nursing agentic pipeline, end to end', () => {
   const emptyNursingContext: NursingContext = { credentials: {}, roleGrants: {} };
 
-  it('a raw untrusted IssueCredential candidate flows through validation, Do, Check, approval, and Act to a real commit', () => {
+  it('a raw untrusted IssueCredential candidate flows through validation, Do, Check, approval, and Act to a real commit', async () => {
     const proposalResult = toPlanProposal<NursingInstruction>(
       nursingInstructionValidators,
       {
@@ -69,7 +69,7 @@ describe('nursing agentic pipeline, end to end', () => {
     if (resolution.kind !== 'resolved') throw new Error('expected resolved');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
@@ -88,7 +88,7 @@ describe('nursing agentic pipeline, end to end', () => {
     });
   });
 
-  it('a malformed candidate never becomes a PlanProposal at all', () => {
+  it('a malformed candidate never becomes a PlanProposal at all', async () => {
     const proposalResult = toPlanProposal<NursingInstruction>(
       nursingInstructionValidators,
       {
@@ -103,7 +103,7 @@ describe('nursing agentic pipeline, end to end', () => {
     expect(proposalResult.ok).toBe(false);
   });
 
-  it('a GrantRole approval is resolved against nursing\'s own committed state, not a hand-maintained list — and a credentialing officer\'s real role still cannot clear it', () => {
+  it('a GrantRole approval is resolved against nursing\'s own committed state, not a hand-maintained list — and a credentialing officer\'s real role still cannot clear it', async () => {
     const officerCredentialId = credentialId('cred-officer');
     const officerGrantId = roleGrantId('grant-officer');
     const tsaiCredentialId = credentialId('cred-tsai');
@@ -197,7 +197,7 @@ describe('nursing agentic pipeline, end to end', () => {
     expect(cmoResolution.approval.approverRole).toBe('chief-medical-officer');
 
     const shell = createInMemoryShell<NursingContext, NursingInstruction, NursingEffect>();
-    const outcome = act(shell, {
+    const outcome = await act(shell, {
       proposal,
       doOutcome,
       decision,
