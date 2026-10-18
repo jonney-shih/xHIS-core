@@ -17,9 +17,22 @@
 // records below just use plain strings.
 //
 // Run with: node scripts/roleplay-cli.mjs
+//
+// Set XHIS_POSTGRES_URL to point the 8 clinical domains at a real,
+// already-running Postgres cluster instead of an in-memory shell --
+// every commit below then becomes a genuine network round trip to that
+// cluster (schema creation, INSERTs, the real OCC/RLS machinery
+// @xhis/postgres-shell implements), not a simulation of one. The `ops`
+// domain always uses its own in-memory @xhis/xguard shell regardless --
+// that domain is deliberately shadow-mode/non-durable by design (see
+// docs/XGUARD_INTEGRATION.md), independent of where clinical state
+// lives. Each run uses a fresh, randomly-suffixed tenant per domain, so
+// repeated runs never collide with (or build on) a previous run's rows.
 
+import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
+import { Pool } from 'pg';
 import {
   act,
   createInMemoryIdentityProvider,
@@ -28,6 +41,7 @@ import {
   resolveApprovalForProposal,
   toPlanProposal,
 } from '@xhis/core';
+import { createPostgresShell, ensureSchema } from '@xhis/postgres-shell';
 import {
   createOpsShell,
   createInMemorySandboxProvisioner,
@@ -92,6 +106,66 @@ const line = () => console.log('─'.repeat(72));
 
 const AT = isoTimestamp('2026-10-07T00:00:00.000Z');
 
+const postgresUrl = process.env.XHIS_POSTGRES_URL;
+const pgPool = postgresUrl ? new Pool({ connectionString: postgresUrl }) : undefined;
+
+/** Never print a real password to this terminal, even though
+ * `postgresUrl` itself came from the environment, not user input. */
+function redactConnectionString(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.password) parsed.password = '***';
+    return parsed.toString();
+  } catch {
+    return '(unparseable connection string -- not printing it)';
+  }
+}
+
+/** Set by `createClinicalShell` every time it hands out a real Postgres
+ * shell, so `runScenario` can print it after a commit -- the only way
+ * to actually look that row up afterward, since every query against
+ * `xhis_shell_commits`/`xhis_shell_audit` is RLS-scoped to exactly one
+ * `app.tenant_id` at a time (see `schema.ts`'s policies): without this,
+ * a just-committed row would be real but unfindable. */
+let lastClinicalTenantId;
+
+/** A fresh tenant per domain per run, so one invocation of this CLI
+ * never collides with (or silently continues) a previous run's rows --
+ * every scenario here is meant to start from its own `buildContext()`
+ * seed, the same as the in-memory shell always did. */
+function createClinicalShell(domainKey) {
+  if (!pgPool) {
+    lastClinicalTenantId = undefined;
+    return createInMemoryShell();
+  }
+  lastClinicalTenantId = `roleplay-${domainKey}-${randomUUID()}`;
+  return createPostgresShell(pgPool, lastClinicalTenantId);
+}
+
+/**
+ * Wraps any `ImperativeShell` to remember the one `commit()` call this
+ * CLI ever expects per scenario run, so `describeResult` can report
+ * what actually got committed without depending on a shell-specific
+ * introspection property (`createInMemoryShell`'s `commits` array,
+ * `createOpsShell`'s own) that `createPostgresShell` has no equivalent
+ * of -- a real database is not something you page all of back into
+ * memory just to show the last row.
+ */
+function withCommitRecorder(shell) {
+  const recorded = {};
+  return {
+    shell: {
+      ...shell,
+      async commit(context, effects) {
+        await shell.commit(context, effects);
+        recorded.context = context;
+        recorded.effects = effects;
+      },
+    },
+    recorded,
+  };
+}
+
 /**
  * One entry per real domain. `tier` names which of the proposal's own
  * risk-tier approver lists to show -- it's a property of the chosen
@@ -114,8 +188,8 @@ export const SCENARIOS = [
       encounters: { 'encounter-1': { encounterId: 'encounter-1', patientId: 'patient-1', status: 'admitted', admittedAt: AT } },
     }),
     rawInstruction: () => ({ kind: 'DischargePatient', encounterId: 'encounter-1', dischargedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `encounter-1 status is now: ${shell.commits.at(-1).context.encounters['encounter-1'].status}`,
+    createShell: () => createClinicalShell('patient'),
+    describeResult: (context) => `encounter-1 status is now: ${context.encounters['encounter-1'].status}`,
   },
   {
     key: 'bed',
@@ -128,8 +202,8 @@ export const SCENARIOS = [
     approvalPolicy: EXAMPLE_bedApprovalPolicy,
     buildContext: () => ({ beds: { 'bed-1': { bedId: 'bed-1', status: 'available' } } }),
     rawInstruction: () => ({ kind: 'AssignBed', bedId: 'bed-1', encounterId: 'encounter-1', assignedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `bed-1 status is now: ${shell.commits.at(-1).context.beds['bed-1'].status}`,
+    createShell: () => createClinicalShell('bed'),
+    describeResult: (context) => `bed-1 status is now: ${context.beds['bed-1'].status}`,
   },
   {
     key: 'lab',
@@ -144,8 +218,8 @@ export const SCENARIOS = [
       orders: { 'order-1': { orderId: 'order-1', encounterId: 'encounter-1', testCode: 'CBC', status: 'ordered', orderedAt: AT } },
     }),
     rawInstruction: () => ({ kind: 'ReportLabResult', orderId: 'order-1', result: 'WBC 7.2', resultedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `order-1 status is now: ${shell.commits.at(-1).context.orders['order-1'].status}`,
+    createShell: () => createClinicalShell('lab'),
+    describeResult: (context) => `order-1 status is now: ${context.orders['order-1'].status}`,
   },
   {
     key: 'pharmacy',
@@ -162,8 +236,8 @@ export const SCENARIOS = [
       },
     }),
     rawInstruction: () => ({ kind: 'DispenseMedication', prescriptionId: 'prescription-1', dispensedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `prescription-1 status is now: ${shell.commits.at(-1).context.prescriptions['prescription-1'].status}`,
+    createShell: () => createClinicalShell('pharmacy'),
+    describeResult: (context) => `prescription-1 status is now: ${context.prescriptions['prescription-1'].status}`,
   },
   {
     key: 'scheduling',
@@ -178,8 +252,8 @@ export const SCENARIOS = [
       bookings: { 'booking-1': { bookingId: 'booking-1', resourceId: 'or-1', subjectId: 'encounter-1', startAt: AT, endAt: AT, status: 'scheduled' } },
     }),
     rawInstruction: () => ({ kind: 'CancelBooking', bookingId: 'booking-1', cancelledAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `booking-1 status is now: ${shell.commits.at(-1).context.bookings['booking-1'].status}`,
+    createShell: () => createClinicalShell('scheduling'),
+    describeResult: (context) => `booking-1 status is now: ${context.bookings['booking-1'].status}`,
   },
   {
     key: 'ledger',
@@ -206,8 +280,8 @@ export const SCENARIOS = [
       },
     }),
     rawInstruction: () => ({ kind: 'ReverseEntry', entryId: 'entry-1', reversedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `entry-1 status is now: ${shell.commits.at(-1).context.entries['entry-1'].status}`,
+    createShell: () => createClinicalShell('ledger'),
+    describeResult: (context) => `entry-1 status is now: ${context.entries['entry-1'].status}`,
   },
   {
     key: 'imaging',
@@ -222,8 +296,8 @@ export const SCENARIOS = [
       studies: { 'study-1': { studyId: 'study-1', encounterId: 'encounter-1', modality: 'CT', status: 'performed', orderedAt: AT, performedAt: AT } },
     }),
     rawInstruction: () => ({ kind: 'ReportStudy', studyId: 'study-1', reportText: 'No acute findings.', reportedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `study-1 status is now: ${shell.commits.at(-1).context.studies['study-1'].status}`,
+    createShell: () => createClinicalShell('imaging'),
+    describeResult: (context) => `study-1 status is now: ${context.studies['study-1'].status}`,
   },
   {
     key: 'nursing',
@@ -241,8 +315,8 @@ export const SCENARIOS = [
       roleGrants: {},
     }),
     rawInstruction: () => ({ kind: 'GrantRole', grantId: 'grant-1', staffId: 'staff-1', role: 'charge-nurse', credentialId: 'credential-1', grantedAt: AT }),
-    createShell: () => createInMemoryShell(),
-    describeResult: (shell) => `grant-1 is now recorded: ${JSON.stringify(shell.commits.at(-1).effects[0])}`,
+    createShell: () => createClinicalShell('nursing'),
+    describeResult: (context) => `grant-1 is now recorded: ${JSON.stringify(context.roleGrants['grant-1'])}`,
   },
   {
     key: 'ops',
@@ -256,7 +330,7 @@ export const SCENARIOS = [
     buildContext: () => ({ sandboxes: {} }),
     rawInstruction: () => ({ kind: 'CordonNode', nodeId: 'node-7', requestedAt: AT }),
     createShell: () => createOpsShell(createInMemorySandboxProvisioner()),
-    describeResult: (shell) => `Recorded effects: ${JSON.stringify(shell.commits.at(-1).effects)} (no real K8s action fires yet)`,
+    describeResult: (_context, effects) => `Recorded effects: ${JSON.stringify(effects)} (no real K8s action fires yet)`,
   },
 ];
 
@@ -318,7 +392,8 @@ async function runScenario(scenario) {
   });
 
   const doOutcome = scenario.engine.executeSequence(context, proposal.instructions);
-  const shell = scenario.createShell();
+  const { shell, recorded } = withCommitRecorder(scenario.createShell());
+  const tenantId = lastClinicalTenantId;
   const outcome = await act(shell, {
     proposal,
     doOutcome,
@@ -331,12 +406,36 @@ async function runScenario(scenario) {
 
   console.log(`\nAct's real outcome: ${outcome}`);
   if (outcome === 'committed') {
-    console.log(scenario.describeResult(shell));
+    console.log(scenario.describeResult(recorded.context, recorded.effects));
+    if (tenantId) {
+      console.log(`(committed to the Postgres cluster under tenant '${tenantId}' -- query xhis_shell_commits/xhis_shell_audit scoped to that exact tenant to look it up)`);
+    }
   }
 }
 
 async function main() {
   console.log('xHIS role-play walkthrough — real engine/validator/verifier/identity code, no mocks.');
+
+  if (pgPool) {
+    console.log(`\nXHIS_POSTGRES_URL set — connecting to ${redactConnectionString(postgresUrl)} ...`);
+    try {
+      await ensureSchema(pgPool);
+    } catch (error) {
+      console.error('\nFailed to reach/prepare the Postgres cluster:', error.message ?? error);
+      await pgPool.end().catch(() => {});
+      process.exitCode = 1;
+      rl.close();
+      return;
+    }
+    console.log(
+      'Connected. Schema ready (xhis_shell_commits / xhis_shell_audit) — the 8 clinical domains below ' +
+        'commit for real against this cluster. The ops domain still uses its own in-memory shell (shadow-mode by design).',
+    );
+  } else {
+    console.log(
+      '\nXHIS_POSTGRES_URL not set — every domain below uses an in-memory shell; nothing persists past this process.',
+    );
+  }
 
   for (;;) {
     line();
@@ -359,6 +458,7 @@ async function main() {
 
   line();
   console.log('Done.');
+  if (pgPool) await pgPool.end();
   rl.close();
 }
 
