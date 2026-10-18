@@ -4069,3 +4069,52 @@ is purely additive.
   inpatient-domain state is a separate, larger architectural question,
   not assumed here). No `CancelCpoeOrder`-style correction path for a
   wrong `TransferWard` beyond transferring again.
+
+## Resolved: the `emergency` domain (ED visits, triage, disposition)
+
+The twelfth domain — the emergency-department counterpart to
+`outpatient`/`inpatient`, kept separate from both for the same
+reason they're kept separate from `patient`: an ED visit is its own
+real-world lifecycle (arrival → triage → disposition), not a variant
+of a scheduled outpatient visit or an inpatient stay.
+
+- **The one real invariant this domain exists to prove — ER's actual
+  distinguishing safety rule, not a documentation-gates-X rehash.**
+  `dispositionPatientHandler` rejects with `EdVisitNotTriaged` unless
+  the visit has actually been triaged — every patient who presents
+  gets at least a triage assessment before being sent home, admitted,
+  transferred, or marked left-without-being-seen, no exceptions. Where
+  `outpatient`/`inpatient`'s own invariants are both "a note must be
+  finalized before X," this one is sharper to the domain it's actually
+  in: triage, not documentation, is what an ED's workflow is built
+  around.
+- **Risk tiers lean further toward `'approval-required'` than any
+  prior domain, independently justified, not copied.** `TriagePatient`
+  itself (not just a later "report" step) gets the top tier: an ESI
+  level is a committed clinical determination the instant it's
+  assigned — there is no `FinalizeTriagePatient` — and it directly
+  drives how urgently a patient gets seen, a "wrong value drives a
+  wrong downstream decision" shape with materially less time to
+  notice and correct than `ReportLabResult`'s. `DispositionPatient`
+  also gets the top tier, the same "terminal within this domain, no
+  undo" reasoning `CompleteEncounter`/`TransferWard` already earn it
+  for.
+- **A deliberately visible seam for later, not built now.**
+  `PatientDispositioned` carries `encounterId` specifically because a
+  `disposition` of `'admitted'` is a natural future outbox-relay target
+  into `patient`'s own `AdmitPatient` and `inpatient`'s own
+  `AssignWard` — the identical shape `outpatient`'s `CpoeOrderPlaced`
+  already relays into `lab`/`imaging`/`pharmacy`. Not built here, the
+  same "make it possible, not yet real" restraint this codebase applies
+  consistently.
+- **Proven, not asserted.** 5 new test files / 26 new tests, including
+  the triage-gates-disposition proof directly. `@xhis/core`: 174 test
+  files / 755 tests, up from 169/729; `@xhis/xguard` and
+  `@xhis/postgres-shell` unaffected.
+- **What this does not yet do.** No re-triage (a patient's condition
+  can change after arrival — a real ED need, deferred here), no
+  disposition reversal, no boarding-time tracking once dispositioned
+  `'admitted'`, no CDSS planner/UI panel/prompt builder/E2E tests/
+  `roleplay-cli.mjs` scenario — the same deliberate first-pass scope
+  cut every domain's own "Resolved" section in this document already
+  explains the reasoning for.
