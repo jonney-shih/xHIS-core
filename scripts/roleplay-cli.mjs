@@ -5,6 +5,11 @@
 // try, approve or reject, and see act()'s real outcome. Everything here is
 // the actual engine/validator/verifier/identity code, never a mock.
 //
+// Also offers WALKTHROUGHS -- multi-step sequences (see that export's own
+// doc comment) for domains where seeing just one instruction's Check/Act
+// cycle undersells what actually happens across a real workflow, e.g.
+// outpatient's check-in -> SOAP note -> finalize -> CPOE order -> complete.
+//
 // The clinical domains deep-import @xhis/core's compiled dist/ for their
 // domain-specific pieces, since those are deliberately *not* part of
 // @xhis/core's own public surface (see that package's index.ts doc
@@ -443,6 +448,157 @@ export const SCENARIOS = [
   },
 ];
 
+/**
+ * A multi-step counterpart to `SCENARIOS`: where each scenario above
+ * shows exactly one instruction's Check/Act cycle (with everything
+ * before it simulated directly in `buildContext()`), a walkthrough
+ * actually runs a whole real sequence of instructions, each through
+ * its own live Check/Act round with its own approval prompt -- so you
+ * see `RecordSoapNote`/`FinalizeSoapNote`/`PlaceCpoeOrder` commit for
+ * real, not just their *result* pre-seeded into a context. All steps
+ * share one shell instance (and, under `XHIS_POSTGRES_URL`, one
+ * Postgres tenant) for the whole walkthrough, so later steps build on
+ * what earlier ones actually committed.
+ */
+export const WALKTHROUGHS = [
+  {
+    key: 'outpatient-full-visit',
+    describe:
+      'A full outpatient visit, five real steps: check in, write a SOAP note, finalize it, place a CPOE lab order, then complete the encounter.',
+    engine: outpatientEngine,
+    validators: outpatientInstructionValidators,
+    verifier: outpatientVerifier,
+    riskTiers: outpatientRiskTiers,
+    approvalPolicy: EXAMPLE_outpatientApprovalPolicy,
+    initialContext: { encounters: {}, soapNotes: {}, cpoeOrders: {} },
+    createShell: () => createClinicalShell('outpatient'),
+    steps: [
+      {
+        label: 'Check in the patient',
+        instruction: () => ({ kind: 'CheckInPatient', encounterId: 'encounter-1', patientId: 'patient-1', checkedInAt: AT }),
+        describeResult: (context) => `encounter-1 status is now: ${context.encounters['encounter-1'].status}`,
+      },
+      {
+        label: 'Record a SOAP note (draft)',
+        instruction: () => ({
+          kind: 'RecordSoapNote',
+          noteId: 'note-1',
+          encounterId: 'encounter-1',
+          authorStaffId: 'dr-lin',
+          subjective: 'Sore throat for 3 days.',
+          objective: 'Temp 37.8C, pharyngeal erythema.',
+          assessment: 'Acute pharyngitis.',
+          plan: 'Supportive care, follow up if worsening.',
+          recordedAt: AT,
+        }),
+        describeResult: (context) => `note-1 status is now: ${context.soapNotes['note-1'].status}`,
+      },
+      {
+        label: 'Finalize the SOAP note',
+        instruction: () => ({ kind: 'FinalizeSoapNote', noteId: 'note-1', finalizedAt: AT }),
+        describeResult: (context) => `note-1 status is now: ${context.soapNotes['note-1'].status}`,
+      },
+      {
+        label: 'Place a CPOE lab order',
+        instruction: () => ({
+          kind: 'PlaceCpoeOrder',
+          orderId: 'order-1',
+          encounterId: 'encounter-1',
+          detail: { orderType: 'lab', testCode: 'CBC' },
+          placedAt: AT,
+        }),
+        describeResult: (context) => `order-1 is now recorded: ${JSON.stringify(context.cpoeOrders['order-1'])}`,
+      },
+      {
+        label: 'Complete the encounter',
+        instruction: () => ({ kind: 'CompleteEncounter', encounterId: 'encounter-1', completedAt: AT }),
+        describeResult: (context) => `encounter-1 status is now: ${context.encounters['encounter-1'].status}`,
+      },
+    ],
+  },
+];
+
+/**
+ * Runs every step of a `WALKTHROUGHS` entry in order, stopping at the
+ * first step that doesn't actually commit -- a later step's own
+ * instruction is only valid against a context the earlier ones really
+ * produced (e.g. `FinalizeSoapNote` needs `note-1` to actually exist),
+ * so there is nothing safe to do with the remaining steps once one
+ * fails.
+ */
+async function runWalkthrough(walkthrough) {
+  line();
+  console.log(`WALKTHROUGH — ${walkthrough.key}`);
+  line();
+  console.log(`\n${walkthrough.describe}`);
+
+  const rawShell = walkthrough.createShell();
+  const tenantId = lastClinicalTenantId;
+  if (tenantId) {
+    console.log(`\n(this whole walkthrough commits under Postgres tenant '${tenantId}')`);
+  }
+
+  let context = walkthrough.initialContext;
+
+  for (let i = 0; i < walkthrough.steps.length; i += 1) {
+    const step = walkthrough.steps[i];
+    line();
+    console.log(`Step ${i + 1}/${walkthrough.steps.length}: ${step.label}`);
+
+    const rawInstruction = step.instruction(context);
+    const proposalResult = toPlanProposal(
+      walkthrough.validators,
+      { instructions: [rawInstruction], rationale: step.label, modelVersion: 'roleplay-cli-v1', promptVersion: 'roleplay-cli-v1' },
+      AT,
+    );
+    if (!proposalResult.ok) {
+      console.error('Validation failed:', proposalResult.error);
+      return;
+    }
+    const proposal = proposalResult.value;
+    const decision = walkthrough.verifier.verify(proposal);
+    const tier = walkthrough.riskTiers[rawInstruction.kind];
+
+    const { resolved, approval } = await roleplayApproval({
+      label: `${walkthrough.key}:${step.label}`,
+      decision,
+      allowedRoles: walkthrough.approvalPolicy[tier],
+      resolveApprovalFn: (role, approved) => {
+        const provider = createInMemoryIdentityProvider([{ id: 'you', displayName: 'You', roles: [role] }]);
+        return resolveApprovalForProposal(provider, walkthrough.riskTiers, walkthrough.approvalPolicy, proposal, {
+          approverId: 'you',
+          approved,
+          decidedAt: AT,
+        });
+      },
+    });
+
+    const doOutcome = walkthrough.engine.executeSequence(context, proposal.instructions);
+    const { shell, recorded } = withCommitRecorder(rawShell);
+    const outcome = await act(shell, {
+      proposal,
+      doOutcome,
+      decision,
+      baselineContext: context,
+      reexecute: (ctx) => walkthrough.engine.executeSequence(ctx, proposal.instructions),
+      approval: resolved ? approval : undefined,
+      recordedAt: AT,
+    });
+
+    console.log(`\nAct's real outcome: ${outcome}`);
+    if (outcome !== 'committed') {
+      console.log('Walkthrough stopped here -- this step did not commit, so later steps have nothing valid to build on.');
+      return;
+    }
+
+    context = recorded.context;
+    console.log(step.describeResult(context));
+  }
+
+  line();
+  console.log(`Walkthrough complete -- all ${walkthrough.steps.length} steps committed for real.`);
+}
+
 export async function roleplayApproval({ label, decision, allowedRoles, resolveApprovalFn }) {
   console.log(`\nCheck's real decision: ${decision.kind}`);
   if (decision.reasons?.length) console.log(`Reasons: ${decision.reasons.join('; ')}`);
@@ -546,23 +702,35 @@ async function main() {
     );
   }
 
+  const menuItems = [
+    ...SCENARIOS.map((scenario) => ({ kind: 'scenario', scenario })),
+    ...WALKTHROUGHS.map((walkthrough) => ({ kind: 'walkthrough', walkthrough })),
+  ];
+
   for (;;) {
     line();
-    console.log('Pick a domain to role-play:');
-    SCENARIOS.forEach((s, i) => console.log(`  ${i + 1}. ${s.key}`));
+    console.log('Pick a domain to role-play, or a multi-step walkthrough:');
+    menuItems.forEach((entry, i) => {
+      const label = entry.kind === 'scenario' ? entry.scenario.key : `${entry.walkthrough.key} (multi-step walkthrough)`;
+      console.log(`  ${i + 1}. ${label}`);
+    });
     console.log('  q. quit');
 
     const choice = (await ask('\n> ')).trim().toLowerCase();
     if (choice === 'q' || choice === 'quit') break;
 
     const index = Number.parseInt(choice, 10) - 1;
-    const scenario = SCENARIOS[index];
-    if (!scenario) {
+    const entry = menuItems[index];
+    if (!entry) {
       console.log('Not a valid choice — pick a number from the list, or q to quit.');
       continue;
     }
 
-    await runScenario(scenario);
+    if (entry.kind === 'scenario') {
+      await runScenario(entry.scenario);
+    } else {
+      await runWalkthrough(entry.walkthrough);
+    }
   }
 
   line();
