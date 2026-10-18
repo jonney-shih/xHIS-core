@@ -3936,3 +3936,81 @@ lives only here.
   deploys this against hospital infrastructure, the same way
   `createFileShell`'s own doc comment leaves retention policy and
   encryption-at-rest to the deployment, not the shell.
+
+## Resolved: the CPOE outbox relay into lab/imaging/pharmacy
+
+Builds the piece `placeCpoeOrderHandler`'s own doc comment explicitly
+deferred: a placed CPOE order used to sit only in `outpatient`'s own
+context forever; it now drives a real instruction in whichever
+clinical domain it actually targets, via three new relays following
+`core/io/relay.ts`'s existing `relayEffects` loop — the identical
+mechanism `outboxRelay.ts`/`outboxRelayLab.ts`/`outboxRelayImaging.ts`
+already use for the `patient`-domain discharge choreography, pointed
+at a different source domain and a creation-shaped reaction instead of
+a cancellation-shaped one.
+
+- **Three files, not one generic one.** `outpatientToLab.ts`/
+  `outpatientToImaging.ts`/`outpatientToPharmacy.ts` each react to
+  `CpoeOrderPlaced` only when `detail.orderType` matches their own
+  domain, deriving `OrderLabTest`/`OrderStudy`/`PrescribeMedication`
+  directly — kept as three near-identical files for the same reason
+  `patientToLab.ts`/`patientToImaging.ts` already are: three real,
+  independently-evolving relationships to three genuinely different
+  target types, not one relationship wearing three costumes. Each
+  comes with its own `outboxRelayOutpatientTo*.ts` binding, named
+  explicitly with both source and target (unlike the existing
+  `outboxRelay*.ts` files, which only ever had one possible source)
+  since `lab`/`imaging` now each have *two* independent relays writing
+  into them — the existing patient-discharge one and this new one —
+  with no coordination between them beyond the `ImperativeShell`/OCC
+  machinery both already go through underneath.
+- **Redelivery safety via ID reuse, not a lookup helper.** Unlike
+  `patientToBed.ts`'s `AssignBed` (which has to *select* a bed) or
+  `patientToLab.ts`'s discharge reaction (which has to *look up* which
+  orders are still pending), a CPOE order's `orderId` is already a
+  fixed, externally-decided fact by the time it reaches here — reused
+  verbatim as the target instruction's own order/study/prescription
+  id, just re-branded to that domain's nominal type. That reuse is the
+  entire redelivery-safety mechanism: the target engine's own
+  `*AlreadyExists` rejection (`LabOrderAlreadyExists`/
+  `StudyAlreadyExists`/`PrescriptionAlreadyExists`) is what makes a
+  redelivered `CpoeOrderPlaced` (the same at-least-once guarantee every
+  `relayEffects` consumer gets) a harmless no-op on its second
+  delivery, reported as `already-ordered`/`already-prescribed`, not
+  `reaction-failed` — no new lookup module needed, unlike `labLookup.ts`/
+  `imagingLookup.ts`'s role for the existing discharge reactions.
+- **Timestamps travel with the source effect, not generated at relay
+  time.** `OrderLabTest`/`OrderStudy`/`PrescribeMedication`'s own
+  `orderedAt`/`prescribedAt` come from the CPOE effect's `placedAt` —
+  the real clinical fact is *when the order was placed*, not whenever
+  this relay happens to get around to processing it. This is the
+  opposite choice from `patientToLab.ts`'s `CancelLabOrder`, whose
+  `cancelledAt` genuinely does occur at reaction time; both are correct
+  for their own instruction, not a contradiction.
+- **`pharmacy`'s first outbox relay.** No `patientTo*.ts` reaction has
+  ever existed for pharmacy — discharge never implied cancelling a
+  prescription the way it implies cancelling a pending lab order or
+  imaging study — so `outpatientToPharmacy.ts`/
+  `outboxRelayOutpatientToPharmacy.ts` introduce `PharmacyEngineLike`/
+  `PharmacyCommitter` fresh rather than reusing an existing one.
+- **Proven, not asserted.** 6 new test files / 23 new tests: pure
+  reaction tests (including the redelivery-safety proof — a second
+  delivery of the same effect reports `already-ordered`, not a
+  duplicate order) and durable-relay integration tests (a real
+  `createFileShell`-backed commit log, redelivered after a cursor
+  reset) for all three domains, plus an end-to-end test per domain
+  (`CheckInPatient` → `PlaceCpoeOrder` → the relay reaction → a real
+  committed order/study/prescription). `@xhis/core`: 163 test files /
+  702 tests, up from 157/679; `@xhis/xguard` and `@xhis/postgres-shell`
+  unaffected.
+- **What this does not yet do.** No actual `runScheduler`/cron-style
+  process drives any of these relays continuously yet — each is a
+  function a caller invokes, the same "mechanism, not a service" shape
+  `relayEffects` itself already has. No compensation if a CPOE order
+  is placed against an encounter that later gets corrected/cancelled
+  (there is no `CancelCpoeOrder` instruction at all yet — see
+  `instructions/outpatient/types.ts`'s own doc comment on what this
+  domain deliberately still doesn't do). Both are real operational
+  pieces a production deployment needs, deliberately left to whoever
+  wires these relays into an actual running system, not built into the
+  relay functions themselves.
