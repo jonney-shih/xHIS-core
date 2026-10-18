@@ -537,7 +537,7 @@ async function main() {
       return;
     }
     console.log(
-      'Connected. Schema ready (xhis_shell_commits / xhis_shell_audit) — the 8 clinical domains below ' +
+      'Connected. Schema ready (xhis_shell_commits / xhis_shell_audit) — the 11 clinical domains below ' +
         'commit for real against this cluster. The ops domain still uses its own in-memory shell (shadow-mode by design).',
     );
   } else {
