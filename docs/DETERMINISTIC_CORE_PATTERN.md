@@ -4014,3 +4014,58 @@ a cancellation-shaped one.
   pieces a production deployment needs, deliberately left to whoever
   wires these relays into an actual running system, not built into the
   relay functions themselves.
+
+## Resolved: the `inpatient` domain (ward assignments, progress notes)
+
+The eleventh domain — ward-stay concerns `patient`'s admit/discharge
+bookends and `bed`'s physical resource allocation deliberately don't
+cover: which ward/service a stay is currently under, who the
+attending of record is, and the rounding documentation produced along
+the way. Kept separate from both, the same way `outpatient` was kept
+separate from `patient` — no renaming of either existing domain, this
+is purely additive.
+
+- **Why not just reuse `bed`.** `AssignBed`/`ReleaseBed` is resource
+  allocation (which physical bed is occupied); a ward assignment here
+  is a *clinical* accountability fact (which service/attending is
+  responsible for this stay). The two usually change together in
+  reality but are owned by different bounded contexts, the same
+  separation `patient`/`bed` already model for "the encounter exists"
+  versus "a bed holds it."
+- **The one real invariant this domain exists to prove, sharper than
+  `outpatient`'s own version of the same idea.** `transferWardHandler`
+  rejects with `NoFinalizedProgressNoteForCurrentAssignment` unless
+  the encounter's *current* active ward assignment — found by scanning
+  the real records, not a cached flag — has at least one finalized
+  progress note linked to that specific `assignmentId`, not just to
+  the encounter. `ProgressNoteRecord` links to `assignmentId` rather
+  than `encounterId` specifically so this stays true: linking only to
+  the encounter (`outpatient`'s `SoapNoteRecord` shape) would let one
+  note written on day one silently authorize every transfer for the
+  rest of a multi-week, multi-ward stay. A dedicated test
+  (`transferWard.test.ts`) proves this directly — a finalized note
+  from an *earlier, already-ended* assignment does not authorize a
+  second transfer.
+- **One instruction, two effects, because it's one real-world event.**
+  `TransferWard` ends the current assignment (`WardAssignmentEnded`)
+  and creates a new one (`WardAssigned`) in a single commit, not two
+  separate instructions a caller could get only half-applied.
+- **Risk tiers reasoned per-instruction against each handler's actual
+  behavior** (see `risk/inpatient.ts`'s doc comment): `review-required`
+  for `AssignWard`/`RecordProgressNote` (correctable, or not yet
+  authoritative), `approval-required` for `FinalizeProgressNote`/
+  `TransferWard` (both terminal within this domain — no
+  `ReactivateWardAssignment`, no way to un-finalize a note).
+- **Proven, not asserted.** 6 new test files / 27 new tests, including
+  the per-assignment-scoping proof above. `@xhis/core`: 169 test
+  files / 729 tests, up from 163/702; `@xhis/xguard` and
+  `@xhis/postgres-shell` unaffected.
+- **What this does not yet do.** No CDSS planner, no UI-render panel,
+  no LLM prompt builder, no agentic-pipeline/approval-flow end-to-end
+  tests, no `roleplay-cli.mjs` scenario — the same deliberate first-
+  pass scope cut `outpatient`'s own "Resolved" section already
+  explains the reasoning for. No cross-domain link to `patient`'s own
+  `DischargePatient` (whether a discharge should ever be gated on
+  inpatient-domain state is a separate, larger architectural question,
+  not assumed here). No `CancelCpoeOrder`-style correction path for a
+  wrong `TransferWard` beyond transferring again.
