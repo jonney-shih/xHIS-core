@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Interactive role-play walkthrough for xHIS -- all 9 real domains (the 8
-// clinical ones plus the xguard ops domain). Pick one, see a real pending
+// Interactive role-play walkthrough for xHIS -- all 12 real domains (the
+// 11 clinical ones plus the xguard ops domain). Pick one, see a real pending
 // proposal and Check's real decision, log in as whichever role you want to
 // try, approve or reject, and see act()'s real outcome. Everything here is
 // the actual engine/validator/verifier/identity code, never a mock.
@@ -18,7 +18,7 @@
 //
 // Run with: node scripts/roleplay-cli.mjs
 //
-// Set XHIS_POSTGRES_URL to point the 8 clinical domains at a real,
+// Set XHIS_POSTGRES_URL to point the 11 clinical domains at a real,
 // already-running Postgres cluster instead of an in-memory shell --
 // every commit below then becomes a genuine network round trip to that
 // cluster (schema creation, INSERTs, the real OCC/RLS machinery
@@ -99,6 +99,24 @@ import { nursingInstructionValidators } from '../packages/xhis-core/dist/agentic
 import { nursingVerifier } from '../packages/xhis-core/dist/agentic/verification/nursing.js';
 import { nursingRiskTiers } from '../packages/xhis-core/dist/agentic/risk/nursing.js';
 import { EXAMPLE_nursingApprovalPolicy } from '../packages/xhis-core/dist/agentic/identity/nursing.js';
+
+import { outpatientEngine } from '../packages/xhis-core/dist/instructions/outpatient/engine.js';
+import { outpatientInstructionValidators } from '../packages/xhis-core/dist/agentic/validation/outpatient.js';
+import { outpatientVerifier } from '../packages/xhis-core/dist/agentic/verification/outpatient.js';
+import { outpatientRiskTiers } from '../packages/xhis-core/dist/agentic/risk/outpatient.js';
+import { EXAMPLE_outpatientApprovalPolicy } from '../packages/xhis-core/dist/agentic/identity/outpatient.js';
+
+import { inpatientEngine } from '../packages/xhis-core/dist/instructions/inpatient/engine.js';
+import { inpatientInstructionValidators } from '../packages/xhis-core/dist/agentic/validation/inpatient.js';
+import { inpatientVerifier } from '../packages/xhis-core/dist/agentic/verification/inpatient.js';
+import { inpatientRiskTiers } from '../packages/xhis-core/dist/agentic/risk/inpatient.js';
+import { EXAMPLE_inpatientApprovalPolicy } from '../packages/xhis-core/dist/agentic/identity/inpatient.js';
+
+import { emergencyEngine } from '../packages/xhis-core/dist/instructions/emergency/engine.js';
+import { emergencyInstructionValidators } from '../packages/xhis-core/dist/agentic/validation/emergency.js';
+import { emergencyVerifier } from '../packages/xhis-core/dist/agentic/verification/emergency.js';
+import { emergencyRiskTiers } from '../packages/xhis-core/dist/agentic/risk/emergency.js';
+import { EXAMPLE_emergencyApprovalPolicy } from '../packages/xhis-core/dist/agentic/identity/emergency.js';
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (question) => rl.question(question);
@@ -317,6 +335,97 @@ export const SCENARIOS = [
     rawInstruction: () => ({ kind: 'GrantRole', grantId: 'grant-1', staffId: 'staff-1', role: 'charge-nurse', credentialId: 'credential-1', grantedAt: AT }),
     createShell: () => createClinicalShell('nursing'),
     describeResult: (context) => `grant-1 is now recorded: ${JSON.stringify(context.roleGrants['grant-1'])}`,
+  },
+  {
+    key: 'outpatient',
+    describe: "Recommending CompleteEncounter(encounter-1) for a checked-in visit with a finalized SOAP note.",
+    tier: 'approval-required',
+    engine: outpatientEngine,
+    validators: outpatientInstructionValidators,
+    verifier: outpatientVerifier,
+    riskTiers: outpatientRiskTiers,
+    approvalPolicy: EXAMPLE_outpatientApprovalPolicy,
+    buildContext: () => ({
+      encounters: { 'encounter-1': { encounterId: 'encounter-1', patientId: 'patient-1', status: 'checked-in', checkedInAt: AT } },
+      soapNotes: {
+        'note-1': {
+          noteId: 'note-1',
+          encounterId: 'encounter-1',
+          authorStaffId: 'dr-lin',
+          subjective: 'Sore throat for 3 days.',
+          objective: 'Temp 37.8C, pharyngeal erythema.',
+          assessment: 'Acute pharyngitis.',
+          plan: 'Supportive care, follow up if worsening.',
+          status: 'finalized',
+          recordedAt: AT,
+          finalizedAt: AT,
+        },
+      },
+      cpoeOrders: {},
+    }),
+    rawInstruction: () => ({ kind: 'CompleteEncounter', encounterId: 'encounter-1', completedAt: AT }),
+    createShell: () => createClinicalShell('outpatient'),
+    describeResult: (context) => `encounter-1 status is now: ${context.encounters['encounter-1'].status}`,
+  },
+  {
+    key: 'inpatient',
+    describe: "Recommending TransferWard(encounter-1) from ward 5B to ward 6A, with a finalized progress note already on record for the current ward assignment.",
+    tier: 'approval-required',
+    engine: inpatientEngine,
+    validators: inpatientInstructionValidators,
+    verifier: inpatientVerifier,
+    riskTiers: inpatientRiskTiers,
+    approvalPolicy: EXAMPLE_inpatientApprovalPolicy,
+    buildContext: () => ({
+      wardAssignments: {
+        'assignment-1': { assignmentId: 'assignment-1', encounterId: 'encounter-1', ward: '5B', attendingStaffId: 'dr-lin', status: 'active', assignedAt: AT },
+      },
+      progressNotes: {
+        'note-1': {
+          noteId: 'note-1',
+          assignmentId: 'assignment-1',
+          authorStaffId: 'dr-lin',
+          subjective: 'Feels better today.',
+          objective: 'Afebrile, vitals stable.',
+          assessment: 'Improving.',
+          plan: 'Continue current treatment.',
+          status: 'finalized',
+          recordedAt: AT,
+          finalizedAt: AT,
+        },
+      },
+    }),
+    rawInstruction: () => ({ kind: 'TransferWard', newAssignmentId: 'assignment-2', encounterId: 'encounter-1', ward: '6A', attendingStaffId: 'dr-wu', transferredAt: AT }),
+    createShell: () => createClinicalShell('inpatient'),
+    describeResult: (context) =>
+      `assignment-1 status is now: ${context.wardAssignments['assignment-1'].status}; assignment-2 is active on ward ${context.wardAssignments['assignment-2'].ward}`,
+  },
+  {
+    key: 'emergency',
+    describe: "Recommending DispositionPatient(visit-1) for an already-triaged ED visit.",
+    tier: 'approval-required',
+    engine: emergencyEngine,
+    validators: emergencyInstructionValidators,
+    verifier: emergencyVerifier,
+    riskTiers: emergencyRiskTiers,
+    approvalPolicy: EXAMPLE_emergencyApprovalPolicy,
+    buildContext: () => ({
+      visits: {
+        'visit-1': {
+          visitId: 'visit-1',
+          encounterId: 'encounter-1',
+          patientId: 'patient-1',
+          chiefComplaint: 'Chest pain',
+          esiLevel: 2,
+          status: 'triaged',
+          registeredAt: AT,
+          triagedAt: AT,
+        },
+      },
+    }),
+    rawInstruction: () => ({ kind: 'DispositionPatient', visitId: 'visit-1', disposition: 'discharged', dispositionedAt: AT }),
+    createShell: () => createClinicalShell('emergency'),
+    describeResult: (context) => `visit-1 status is now: ${context.visits['visit-1'].status} (disposition: ${context.visits['visit-1'].disposition})`,
   },
   {
     key: 'ops',

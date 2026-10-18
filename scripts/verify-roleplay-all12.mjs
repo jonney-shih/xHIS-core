@@ -2,8 +2,13 @@
 // SCENARIOS registry -- proves the real toPlanProposal -> Check ->
 // resolveApprovalForProposal -> act() chain actually commits for an
 // authorized role, and is correctly refused for an unauthorized one,
-// across all 9 domains. Bypasses readline entirely (see roleplay-cli.mjs's
-// own note on why piped stdin can't drive its interactive prompts).
+// across all 12 domains (the 11 clinical ones plus ops). Bypasses
+// readline entirely (see roleplay-cli.mjs's own note on why piped
+// stdin can't drive its interactive prompts). Previously
+// verify-roleplay-all9.mjs, renamed once outpatient/inpatient/
+// emergency brought the real domain count to 12 -- this file's own
+// logic is, and always was, fully generic over SCENARIOS; only the
+// name and this comment ever hardcoded a count.
 import { act, createInMemoryIdentityProvider, resolveApprovalForProposal, toPlanProposal } from '@xhis/core';
 import { SCENARIOS } from './roleplay-cli.mjs';
 
