@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "xguard-ops.fullname" . }}-smoke-test
+  labels:
+    {{- include "xguard-ops.labels" . | nindent 4 }}
+spec:
+  # A Job, deliberately not a Deployment: this image runs a one-shot
+  # connectivity/RBAC smoke test that exits (see
+  # clusterConnectivitySmokeTest.ts's own doc comment), not a
+  # long-running server -- a Deployment would just crash-loop it on
+  # every successful exit.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "xguard-ops.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "xguard-ops.fullname" . }}
+      restartPolicy: Never
+      containers:
+        - name: xguard-ops
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- with .Values.smokeTest.nodeName }}
+            - name: NODE_SMOKE_TEST_NODE_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.smokeTest.pod.namespace }}
+            - name: NODE_SMOKE_TEST_POD_NAMESPACE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.smokeTest.pod.name }}
+            - name: NODE_SMOKE_TEST_POD_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.smokeTest.pod.containerName }}
+            - name: NODE_SMOKE_TEST_CONTAINER_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.smokeTest.deployment.namespace }}
+            - name: NODE_SMOKE_TEST_DEPLOYMENT_NAMESPACE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.smokeTest.deployment.name }}
+            - name: NODE_SMOKE_TEST_DEPLOYMENT_NAME
+              value: {{ . | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

@@ -5,9 +5,13 @@ import type { OpsContext, OpsEffect, OpsError, OpsInstruction } from '../types.j
 type RestartContainer = Extract<OpsInstruction, { kind: 'RestartContainer' }>;
 
 /**
- * Stubbed — see `cordonNode.ts`'s doc comment for why: typed and
- * dispatchable, but no tracked container state and no real remediation
- * logic yet. `// TODO: real K8s-backed implementation`.
+ * Still a pass-through at Do time — see `cordonNode.ts`'s doc comment
+ * for why (no tracked container state in `OpsContext` yet). The
+ * `ContainerRestarted` effect this returns does reach a real cluster
+ * now via `agentic/shell/opsShell.ts`'s `commit()`, when a
+ * `ContainerRestarter` is supplied (see `cluster/containerRestarter.ts`;
+ * `cluster/kubernetesContainerRestarter.ts` for the real one) — same
+ * "Do describes, Act forwards" separation as `cordonNode.ts`.
  */
 export const restartContainerHandler: Handler<OpsContext, RestartContainer, OpsEffect, OpsError> = (
   ctx,
