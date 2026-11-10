@@ -26,3 +26,18 @@ actually checks and why, and
 discipline" for the specific mistake this whole chain — hook, CI,
 branch protection — exists to stop from ever landing on `master`
 silently again.
+
+## Setting up on a new machine
+
+Requires Node 24+ and git (`gh` is only needed for opening PRs).
+
+```sh
+git clone <repo-url> xHIS-core
+cd xHIS-core
+npm install                  # installs all workspaces and sets up the husky pre-commit hook
+npm run lint && npm run typecheck && npm test   # same checks as the `verify` CI job
+```
+
+Everything the project knows lives in the repo (code, `docs/`, `CLAUDE.md`),
+not in any one machine's tooling or chat history. Design decisions worth
+keeping across machines belong in `docs/`.
