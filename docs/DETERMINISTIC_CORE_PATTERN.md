@@ -4118,3 +4118,109 @@ of a scheduled outpatient visit or an inpatient stay.
   `roleplay-cli.mjs` scenario — the same deliberate first-pass scope
   cut every domain's own "Resolved" section in this document already
   explains the reasoning for.
+
+## Resolved: a real, LDAP/Active-Directory-backed `IdentityProvider` (`@xhis/ldap-identity`)
+
+Another Phase 0 gap closed, same shape as `@xhis/postgres-shell`'s own
+section above: `agentic/identity/identity.ts`'s `IdentityProvider` is
+the seam (`resolve(identityId, asOf)`); `createInMemoryIdentityProvider`
+was always the documented stand-in, "until a real on-call/staff-
+directory system exists to read from" (see
+`docs/XGUARD_INTEGRATION.md`'s own "Checked, and explicitly deferred"
+section, written before this package existed). A directory now does.
+
+- **Why a new sibling package, not a new file in `@xhis/core`.** A real
+  directory client is a real runtime dependency (`ldapts`) — the exact
+  "distributed/I-O harness" category `@xhis/core`'s zero-dependency
+  guarantee exists to keep out, the same reasoning that already split
+  out `@xhis/xguard` and `@xhis/postgres-shell`. `@xhis/ldap-identity`
+  depends on `@xhis/core` (for `Identity`/`IdentityProvider` and
+  nothing else) and `ldapts`; `@xhis/core` itself gained no new
+  dependency.
+- **The actual design decision: a refreshable cache behind a
+  synchronous `resolve()`, not an async `IdentityProvider`.**
+  `IdentityProvider.resolve()` is, and stays, fully synchronous.
+  Widening it the way `ImperativeShell` was widened (see that section
+  above) was considered and rejected once the blast radius was
+  actually checked, not estimated: unlike `ImperativeShell.commit`/
+  `recordAudit`/`readLatest`, which only `act()`/`actHuman()`/
+  `runScheduler()`/`relayEffects()` ever call — so widening those four
+  call sites was the *entire* fix — `IdentityProvider.resolve()` is
+  called directly by `resolveApproval.ts`, which is in turn called
+  directly by `resolveApprovalForProposal.ts` and
+  `resolveActorForInstructions.ts`, which are in turn called directly,
+  synchronously, by every one of this codebase's twelve domains' own
+  approval-flow tests and every real human-approval call site — dozens
+  of places, confirmed by grep, none of which `await` either function
+  today. Making directory resolution itself `async` would force
+  `await` onto every one of them, purely to accommodate one provider
+  most of them will never construct. A cache is also what a real
+  deployment wants on its own merits regardless of this constraint: a
+  live LDAP round trip on every single approval resolution has
+  latency, rate-limit, and directory-load costs a periodically
+  refreshed local snapshot avoids.
+- **The mechanism.** `createLdapIdentityProvider` exposes `resolve()`
+  (synchronous, reads only the cache) and `refresh(now)` (async, the
+  one real bind+search this package ever performs, via the
+  `DirectoryClient` seam in `directoryClient.ts`). `refresh()` is never
+  called from inside `resolve()` — a real deployment calls it on its
+  own timer or before rendering an approval UI; `resolve()` always
+  answers against whatever snapshot the most recent `refresh()` left
+  behind, never a live read.
+- **Failing closed on staleness, not just on an unknown identity.**
+  `resolve()` returns `undefined` — the same "unknown identity" outcome
+  `resolveApproval.ts` already treats as non-exceptional, not an error
+  — both when nothing has ever been fetched and when `asOf` is more
+  than `maxCacheAgeMs` past the last `refresh()`. Without the second
+  check, a stalled refresh schedule or a directory outage would
+  silently keep authorizing against an arbitrarily old snapshot
+  forever — a revoked role would stay effective indefinitely. This is
+  the same "fail closed, never open" precedent `resolveApproval.ts`'s
+  own doc comment already established for an empty `requiredRoles`
+  list, applied here to cache age instead. A malformed timestamp on
+  either side of that comparison also fails closed, rather than
+  `NaN`'s comparison-always-false behavior silently treating it as
+  fresh.
+- **Role mapping is a per-deployment configuration value, not
+  invented here.** `roleMapping.ts`'s `GroupToRoleMap` maps a
+  directory group's distinguished name to this system's own
+  free-form role-name string (`Identity.roles`, unchanged from
+  `identity.ts`'s own doc comment on why that stays a string set, not
+  a closed union). A hospital's own AD group structure is not
+  something this package could guess at; an unmapped group (e.g.
+  "Domain Users") is silently ignored, not an error.
+- **Proven empirically where that was possible; honestly not where it
+  wasn't.** No real Active Directory or LDAP server is available in
+  this environment — and the LDAP ecosystem's usual lightweight
+  test-server package, `ldapjs`, is itself now fully decommissioned (no
+  longer maintained upstream), so it was deliberately not added even as
+  a dev-only dependency. Following the identical precedent
+  `@xhis/postgres-shell`'s own tests already set for exactly this
+  situation (`tests/support/fakePgPool.ts` fakes `pg.Pool` directly
+  rather than standing up a real database for unit tests),
+  `tests/ldapDirectoryClient.test.ts` fakes `ldapts`'s own `Client`
+  export via `vi.mock` and proves the real bind credentials, search
+  scope/filter/attributes, and entry-to-`DirectoryEntry` mapping (including
+  normalizing a single-valued `memberOf` string the same as a
+  multi-valued array) — not that a real Active Directory server
+  accepts this bind or returns `memberOf` in this shape.
+  `ldapIdentityProvider.test.ts` and `roleMapping.test.ts` prove the
+  cache/staleness/role-mapping logic directly, independent of any
+  directory client at all. 18 tests across 3 files, typecheck and lint
+  clean.
+- **What this does not yet do.** No SASL/Kerberos bind (simple bind
+  with a plain `bindDn`/`bindPassword` only — the common case for a
+  dedicated service account, but not every directory's preferred
+  auth). No nested-group resolution (`memberOf` as the directory server
+  itself reports it, not walking a group's own group memberships
+  transitively — some AD deployments expect that walk; this doesn't do
+  it). No connection pooling or retry/backoff on `refresh()` failure —
+  a failed refresh simply leaves the previous snapshot in place until
+  it ages out past `maxCacheAgeMs` and starts failing closed, with no
+  special handling beyond that. No on-call *roster* — this resolves
+  "who holds what role in the directory right now," the same
+  role-holding-identity question every other `IdentityProvider` in
+  this codebase answers, still distinct from "who is on call this
+  week," which `docs/XGUARD_INTEGRATION.md`'s own "Checked, and
+  explicitly deferred" section already named as a different, still-open
+  gap.

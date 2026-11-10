@@ -1,0 +1,27 @@
+{
+  "name": "@xhis/ldap-identity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A real, LDAP/Active-Directory-backed IdentityProvider -- a refreshable in-memory cache behind a synchronous resolve(), so @xhis/core's IdentityProvider contract (and every one of its dozens of existing synchronous call sites) never has to become async just for this. Built only on @xhis/core's public export surface, same as @xhis/xguard and @xhis/postgres-shell; @xhis/core itself stays dependency-free.",
+  "dependencies": {
+    "@xhis/core": "^0.1.0",
+    "ldapts": "^9.2.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "npm run build --workspace=@xhis/core",
+    "build": "tsc",
+    "pretypecheck": "npm run build --workspace=@xhis/core",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
+    "pretest": "npm run build --workspace=@xhis/core",
+    "test": "vitest run"
+  }
+}
