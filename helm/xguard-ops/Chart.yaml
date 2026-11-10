@@ -1,0 +1,14 @@
+apiVersion: v2
+name: xguard-ops
+description: >-
+  Runs @xhis/xguard's cluster-connectivity smoke test (see
+  packages/xguard/src/runner/clusterConnectivitySmokeTest.ts) as a
+  one-shot Job -- proves the ServiceAccount's RBAC and in-cluster
+  API-server reachability are both correct. Deliberately not a
+  self-healing controller yet: see packages/xguard/Dockerfile's own
+  comment and docs/XGUARD_INTEGRATION.md's "What's deferred" section
+  for why (no real telemetry adapter or identity provider exists yet
+  to drive one).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

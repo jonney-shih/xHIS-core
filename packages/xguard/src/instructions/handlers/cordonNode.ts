@@ -5,14 +5,21 @@ import type { OpsContext, OpsEffect, OpsError, OpsInstruction } from '../types.j
 type CordonNode = Extract<OpsInstruction, { kind: 'CordonNode' }>;
 
 /**
- * Stubbed, like `restartContainer.ts`/`scaleDeployment.ts`: typed and
- * dispatchable so `HandlerRegistry`'s totality check passes, but
- * `OpsContext` has no node-tracking state yet (see `types.ts`'s own doc
- * comment on why only sandboxes are tracked), so this handler has
- * nothing to check or update — a pass-through that only proves the
- * instruction reaches Do. `// TODO: real K8s-backed implementation` —
- * cordoning a node for real, and tracking its state here, is deferred
- * to a follow-up (see docs/XGUARD_INTEGRATION.md).
+ * Still a pass-through at Do time, like `restartContainer.ts`/
+ * `scaleDeployment.ts`: typed and dispatchable so `HandlerRegistry`'s
+ * totality check passes, but `OpsContext` has no node-tracking state
+ * yet (see `types.ts`'s own doc comment on why only sandboxes are
+ * tracked), so this handler has nothing to check or update against —
+ * that part of "real K8s-backed" is still deferred (see
+ * `docs/XGUARD_INTEGRATION.md`).
+ *
+ * The `NodeCordoned` effect this returns *does* reach a real cluster
+ * now, just one layer up: `agentic/shell/opsShell.ts`'s `commit()`
+ * forwards it to a `NodeCordoner` (see `cluster/nodeCordoner.ts`;
+ * `cluster/kubernetesNodeCordoner.ts` for the real, K8s-backed one)
+ * when one is supplied — this handler doesn't need to know that, the
+ * same "Do only ever describes, Act is the one place I/O happens"
+ * separation every clinical domain's own handlers already rely on.
  */
 export const cordonNodeHandler: Handler<OpsContext, CordonNode, OpsEffect, OpsError> = (ctx, instruction) => {
   return ok({

@@ -14,13 +14,19 @@ import type { ContainerId, DeploymentId, IsoTimestamp, NodeId, SandboxId } from 
  * `tests/integration/sandboxTimeoutRemediation.test.ts`,
  * `tests/integration/nodeUnhealthyRemediation.test.ts`,
  * `tests/integration/containerUnhealthyRemediation.test.ts`, and
- * `tests/integration/scalingRecommendedRemediation.test.ts`). None has
- * a real remediation *action* behind its committed effect in the same
- * sense except `ReprovisionSandbox`: `commit()` forwards
- * `SandboxReprovisioned` to a real (if in-memory-backed)
- * `SandboxProvisioner`, but `NodeCordoned`, `ContainerRestarted`, and
- * `DeploymentScaled` are still only recorded, not forwarded anywhere —
- * see `agentic/shell/opsShell.ts`'s own doc comment. `ScaleDeployment`
+ * `tests/integration/scalingRecommendedRemediation.test.ts`). Every
+ * variant's committed effect can also reach a real remediation
+ * *action* now: `agentic/shell/opsShell.ts`'s `commit()` forwards
+ * `SandboxReprovisioned` to a `SandboxProvisioner` unconditionally
+ * (still only in-memory-backed — see `sandbox/provisioner.ts`), and
+ * forwards `NodeCordoned`/`ContainerRestarted`/`DeploymentScaled` to a
+ * real, K8s-backed `NodeCordoner`/`ContainerRestarter`/
+ * `DeploymentScaler` (see `cluster/kubernetes*.ts`) whenever one is
+ * supplied via `OpsClusterActions` — optional, so a caller without a
+ * real cluster to point at yet still gets exactly the
+ * record-but-don't-forward behavior this package always had. None of
+ * this is verified against a real cluster (see `cluster/
+ * kubernetesNodeCordoner.ts`'s own doc comment on why). `ScaleDeployment`
  * is also the one variant whose planner rule relays a *value*
  * (`replicas`), not just a target identity — see
  * `ScalingRecommendedEvent`'s own doc comment in `@xhis/core` for why
