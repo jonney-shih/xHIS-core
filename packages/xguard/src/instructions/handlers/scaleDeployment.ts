@@ -5,9 +5,13 @@ import type { OpsContext, OpsEffect, OpsError, OpsInstruction } from '../types.j
 type ScaleDeployment = Extract<OpsInstruction, { kind: 'ScaleDeployment' }>;
 
 /**
- * Stubbed — see `cordonNode.ts`'s doc comment for why: typed and
- * dispatchable, but no tracked deployment state and no real remediation
- * logic yet. `// TODO: real K8s-backed implementation`.
+ * Still a pass-through at Do time — see `cordonNode.ts`'s doc comment
+ * for why (no tracked deployment state in `OpsContext` yet). The
+ * `DeploymentScaled` effect this returns does reach a real cluster now
+ * via `agentic/shell/opsShell.ts`'s `commit()`, when a
+ * `DeploymentScaler` is supplied (see `cluster/deploymentScaler.ts`;
+ * `cluster/kubernetesDeploymentScaler.ts` for the real one) — same
+ * "Do describes, Act forwards" separation as `cordonNode.ts`.
  */
 export const scaleDeploymentHandler: Handler<OpsContext, ScaleDeployment, OpsEffect, OpsError> = (
   ctx,

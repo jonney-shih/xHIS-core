@@ -5,6 +5,7 @@
   "type": "module",
   "description": "xHIS-xguard: the operational/production agentic domain (K8s sandbox lifecycle, telemetry-driven self-healing) built only on @xhis/core's public export surface",
   "dependencies": {
+    "@kubernetes/client-node": "^2.0.2",
     "@xhis/core": "^0.1.0",
     "zod": "^3.23.8"
   },
@@ -22,6 +23,7 @@
     "pretypecheck": "npm run build --workspace=@xhis/core",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
     "pretest": "npm run build --workspace=@xhis/core",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke-test:cluster-connectivity": "node dist/runner/clusterConnectivitySmokeTest.js"
   }
 }

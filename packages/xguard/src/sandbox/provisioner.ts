@@ -13,16 +13,24 @@ export interface SandboxStatus {
  * depends on which implementation is behind it, the same seam role
  * `@xhis/core`'s `ImperativeShell` itself plays one layer up.
  *
- * // TODO: real K8s-backed implementation. A real provisioner behind
- * this interface would talk to `@kubernetes/client-node` (deliberately
- * not a dependency of this package yet), and this package's own
- * responsibilities would grow to include an idle-TTL reaper (sandboxes
- * nobody is reprovisioning or actively using get torn down after some
- * inactivity window) and resource-limit enforcement (a cap on
- * concurrently-provisioned sandboxes, or per-sandbox CPU/memory quotas)
- * — neither of which exists anywhere in this package today. Both are
- * explicitly out of scope for this slice; see `getStatus`'s own doc
- * comment below for exactly where the first of those would plug in.
+ * // TODO: real K8s-backed implementation. `@kubernetes/client-node`
+ * is now a dependency of this package — see `cluster/kubernetes*.ts`
+ * for the real `NodeCordoner`/`ContainerRestarter`/`DeploymentScaler`
+ * built against it — but a real `SandboxProvisioner` isn't among them
+ * yet; "reprovision a sandbox" has no settled K8s-resource shape in
+ * this workspace the way "cordon a node"/"delete a pod"/"scale a
+ * deployment" already do, so building one here would mean guessing at
+ * that shape instead of waiting on a real, stated need, the same
+ * discipline this codebase's own history already favors (see
+ * `docs/DETERMINISTIC_CORE_PATTERN.md`). This package's own
+ * responsibilities would also grow to include an idle-TTL reaper
+ * (sandboxes nobody is reprovisioning or actively using get torn down
+ * after some inactivity window) and resource-limit enforcement (a cap
+ * on concurrently-provisioned sandboxes, or per-sandbox CPU/memory
+ * quotas) — neither of which exists anywhere in this package today.
+ * Both are explicitly out of scope for this slice; see `getStatus`'s
+ * own doc comment below for exactly where the first of those would
+ * plug in.
  */
 export interface SandboxProvisioner {
   /** Requests that the given sandbox be torn down and replaced with a

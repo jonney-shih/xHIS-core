@@ -138,10 +138,16 @@ Four fully working, end-to-end *decision* paths exist today — every
    `OpsInstruction` variants); a permitted identity
    (`'sre-lead'`/`'platform-lead'`, see `policy/approvalPolicy.ts`)
    approves it; and `act()` commits it through `OpsShell` — which
-   records the `NodeCordoned` effect and its audit entry, but does
-   **not** forward it to any real action yet (see "What's deferred"
-   below). This path proves the recommendation reaches a human
-   correctly, not that cordoning is real.
+   records the `NodeCordoned` effect and its audit entry, and forwards
+   it to a real, K8s-backed `NodeCordoner` when `OpsShell` is
+   constructed with one (see "Real, K8s-backed cluster actions" below;
+   the test itself still constructs `OpsShell` without one, since
+   proving the decision path and proving the real cluster call are
+   deliberately separate tests — see `tests/cluster/
+   kubernetesNodeCordoner.test.ts`). This path proves the
+   recommendation reaches a human correctly; it does not by itself
+   prove cordoning works against a real cluster — nothing in this
+   workspace does yet.
 3. (see `tests/integration/containerUnhealthyRemediation.test.ts`) a
    `ContainerUnhealthyEvent` (repeated liveness-probe failures while the
    process is still running — degraded, not crashed, so the platform's
@@ -150,8 +156,8 @@ Four fully working, end-to-end *decision* paths exist today — every
    accepts it at the `'auto'` tier, the identical "reversible,
    single-resource-scoped" reasoning `ReprovisionSandbox` gets; and
    `act()` commits it through `OpsShell`, which records the
-   `ContainerRestarted` effect and its audit entry, but — like
-   `CordonNode` — does **not** forward it to any real action yet.
+   `ContainerRestarted` effect and its audit entry, and forwards it to
+   a real `ContainerRestarter` the same optional way `CordonNode` does.
 4. (see `tests/integration/scalingRecommendedRemediation.test.ts`) a
    `ScalingRecommendedEvent` — a target replica count *already decided*
    by an external recommender, not computed by this planner — is
@@ -162,29 +168,74 @@ Four fully working, end-to-end *decision* paths exist today — every
    one tier below `CordonNode`'s blast radius); a permitted identity
    (`'sre-oncall'`, see `policy/approvalPolicy.ts`) approves it; and
    `act()` commits it through `OpsShell`, which records the
-   `DeploymentScaled` effect and its audit entry, but — like the two
-   paths above — does **not** forward it to any real action yet.
+   `DeploymentScaled` effect and its audit entry, and forwards it to a
+   real `DeploymentScaler` the same optional way the two paths above do.
 
 Every `OpsInstruction` variant has a planner rule now — that closes the
-"typed but unmapped" gap this section used to describe. What none of
-the four have yet is described below, not silently: only
-`ReprovisionSandbox`'s committed effect reaches a real (if
-in-memory-backed) action; the other three still only record their
-effect.
+"typed but unmapped" gap this section used to describe. Every
+variant's committed effect can also reach a real action now — see
+"Real, K8s-backed cluster actions" below for what that does and
+doesn't prove.
 
-## What's deferred to a follow-up
+## Real, K8s-backed cluster actions: `cluster/`
 
-None of the following exists anywhere in this workspace today, and all
-of it is explicitly out of scope for this integration:
+`packages/xguard/src/cluster/` is where `NodeCordoned`/
+`ContainerRestarted`/`DeploymentScaled` stopped being record-only
+effects. Same seam role `sandbox/provisioner.ts`'s `SandboxProvisioner`
+already played for `ReprovisionSandbox`, now filled for the other
+three: `NodeCordoner`/`ContainerRestarter`/`DeploymentScaler` are the
+interfaces (`cluster/{nodeCordoner,containerRestarter,
+deploymentScaler}.ts`), and `cluster/kubernetes*.ts` are their real
+implementations, built against `@kubernetes/client-node` — now a
+dependency of `@xhis/xguard`, exactly where the previous version of
+this document said that dependency would eventually need to land.
+
+`agentic/shell/opsShell.ts`'s `createOpsShell()` takes these three as
+an optional second argument (`OpsClusterActions`), each independently
+optional — a caller with a real `NodeCordoner` but no real
+`DeploymentScaler` yet doesn't need to fake the other one, and a
+caller that passes none at all (every pre-existing
+`tests/integration/*.ts` remediation test) gets exactly the
+record-but-don't-forward behavior this package always had.
+
+Two things this is honest about not yet having:
+
+- **No real cluster to verify any of it against.** `cluster/
+  kubernetesNodeCordoner.test.ts` and its siblings prove the real HTTP
+  call (method, path, body) each implementation makes, against a
+  hand-rolled fake HTTP server standing in for the K8s API
+  (`tests/cluster/fakeKubeApiServer.ts`) — not that a real cluster's
+  RBAC, admission control, or scheduler actually accept it. `packages/
+  xguard/Dockerfile` and `helm/xguard-ops/` package this up for a real
+  deployment (see `helm/xguard-ops/README.md`), but neither has been
+  run for real either — no Docker daemon or cluster is available in
+  this environment. This is the same honestly-unverified status
+  `packages/postgres-shell` carried before its own first real-Postgres
+  pressure test.
+- **`ContainerId`/`DeploymentId` now have a real shape contract.**
+  Neither carried a Kubernetes namespace before (see `instructions/
+  ids.ts` — both were, and still are, plain opaque branded strings);
+  `cluster/resourceRef.ts` defines this package's own convention
+  (`"<namespace>/<name>"`, and for `ContainerId`,
+  `"<namespace>/<podName>/<containerName>"`) rather than silently
+  guessing a default namespace. Nothing in this workspace constructs a
+  real one of either id yet (`instructions/handlers/
+  {restartContainer,scaleDeployment}.ts` are still Do-time
+  pass-throughs — see their own doc comments), so there's no existing
+  caller to migrate; whatever starts producing one for real needs to
+  follow this shape.
+
+Still genuinely deferred, unlike the three above:
 
 - **A real, K8s-backed `SandboxProvisioner`.** `sandbox/provisioner.ts`
   defines the interface (`reprovision`/`getStatus`); the only
-  implementation is `sandbox/inMemorySandboxProvisioner.ts`, which
-  tracks status in a `Map` and does nothing to any real cluster. A real
-  implementation would be built against `@kubernetes/client-node` —
-  deliberately not a dependency of `@xhis/xguard` yet — behind this
-  same interface, so nothing above the provisioner seam (the planner,
-  Check, `OpsShell`) would need to change.
+  implementation is still `sandbox/inMemorySandboxProvisioner.ts`,
+  which tracks status in a `Map` and does nothing to any real cluster.
+  "Reprovision a sandbox" has no settled K8s-resource shape in this
+  workspace the way "cordon a node"/"delete a pod"/"scale a
+  deployment" already do, so building one would mean guessing at that
+  shape instead of waiting on a real, stated need — see `sandbox/
+  provisioner.ts`'s own doc comment.
 - **An idle-TTL reaper.** Nothing tears down a sandbox that's `'ready'`
   and has been sitting idle; `sandbox/provisioner.ts`'s `getStatus` doc
   comment notes this is where a reaper would need to read "how long has
@@ -192,25 +243,6 @@ of it is explicitly out of scope for this integration:
 - **Resource-limit enforcement.** No cap on concurrently-provisioned
   sandboxes, no per-sandbox CPU/memory quota. A real provisioner
   implementation is where this would need to live.
-- **A real, K8s-backed node-cordon action.** `CordonNode` now has a
-  working decision path (see above), but `instructions/handlers/
-  cordonNode.ts` and `agentic/shell/opsShell.ts`'s `commit()` both still
-  only record the `NodeCordoned` effect — neither calls any real
-  cluster API (e.g. marking a `Node` unschedulable via
-  `@kubernetes/client-node`). Deferred behind the same seam
-  `SandboxProvisioner` already models for reprovisioning, once a
-  concrete node-lifecycle interface is worth introducing for it.
-- **A real, K8s-backed container-restart action.** Same story as
-  `CordonNode`, now for `RestartContainer`: `instructions/handlers/
-  restartContainer.ts` and `OpsShell.commit()` both only record the
-  `ContainerRestarted` effect — neither calls any real cluster API
-  (e.g. deleting a `Pod` or restarting a container via
-  `@kubernetes/client-node`).
-- **A real, K8s-backed deployment-scale action.** Same story again, now
-  for `ScaleDeployment`: `instructions/handlers/scaleDeployment.ts` and
-  `OpsShell.commit()` both only record the `DeploymentScaled` effect —
-  neither calls any real cluster API (e.g. patching a `Deployment`'s
-  `spec.replicas` via `@kubernetes/client-node`).
 - **A real external scaling recommender.** `ScalingRecommendedEvent`
   assumes something else (an HPA-like autoscaler, a custom
   capacity-planning service) already decided the target replica count;

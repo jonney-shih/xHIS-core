@@ -25,7 +25,7 @@ export { EXAMPLE_opsApprovalPolicy } from './policy/approvalPolicy.js';
 export { opsInstructionValidators } from './agentic/validation/ops.js';
 export { createBlastRadiusPlaceholderVerifier, opsVerifier } from './agentic/verification/ops.js';
 export { createOpsPlanner, type OpsRemediationContext } from './agentic/planning/opsPlanner.js';
-export { createOpsShell, type OpsCommittedBatch } from './agentic/shell/opsShell.js';
+export { createOpsShell, type OpsClusterActions, type OpsCommittedBatch } from './agentic/shell/opsShell.js';
 export { createShadowOpsShell } from './agentic/shell/shadowOpsShell.js';
 export { createFileShadowOpsShell } from './agentic/shell/fileShadowOpsShell.js';
 export {
@@ -39,5 +39,19 @@ export {
 
 export type { SandboxProvisioner, SandboxStatus } from './sandbox/provisioner.js';
 export { createInMemorySandboxProvisioner } from './sandbox/inMemorySandboxProvisioner.js';
+
+export type { NodeCordoner, NodeStatus } from './cluster/nodeCordoner.js';
+export { createKubernetesNodeCordoner } from './cluster/kubernetesNodeCordoner.js';
+export type { ContainerRestarter, ContainerStatus } from './cluster/containerRestarter.js';
+export { createKubernetesContainerRestarter } from './cluster/kubernetesContainerRestarter.js';
+export type { DeploymentScaleStatus, DeploymentScaler } from './cluster/deploymentScaler.js';
+export { createKubernetesDeploymentScaler } from './cluster/kubernetesDeploymentScaler.js';
+export {
+  MalformedResourceIdError,
+  parseNamespacedName,
+  parseNamespacedPodContainerRef,
+  type NamespacedName,
+  type NamespacedPodContainerRef,
+} from './cluster/resourceRef.js';
 
 export { subscribeOpsTelemetryListener, type OpsTelemetryListenerOptions } from './telemetry/opsTelemetryListener.js';

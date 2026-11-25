@@ -1,0 +1,35 @@
+image:
+  repository: xguard-ops
+  tag: dev
+  pullPolicy: IfNotPresent
+
+# Optional -- the one check that always runs (listNode) only needs
+# cluster-scoped `list` on `nodes`. Set any of these to also exercise
+# the matching read against a real resource (see
+# clusterConnectivitySmokeTest.ts's own doc comment for why every
+# check is read-only).
+smokeTest:
+  nodeName: ""
+  pod:
+    namespace: ""
+    name: ""
+    containerName: ""
+  deployment:
+    namespace: ""
+    name: ""
+
+# The minimal verbs the real write actions (NodeCordoner.cordon,
+# ContainerRestarter.restart, DeploymentScaler.scale) need, not just
+# this smoke test's own read-only checks -- granted now so promoting
+# this ServiceAccount from "runs the smoke test" to "backs a real
+# OpsShell" later is a code change, not an RBAC change too.
+rbac:
+  create: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

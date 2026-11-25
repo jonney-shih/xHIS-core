@@ -1,0 +1,45 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "xguard-ops.fullname" . }}
+  labels:
+    {{- include "xguard-ops.labels" . | nindent 4 }}
+rules:
+  # NodeCordoner (cluster/kubernetesNodeCordoner.ts): list for the
+  # smoke test's always-on check, get+patch for getStatus/cordon.
+  # Nodes are cluster-scoped -- no namespace to restrict this to.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list", "get", "patch"]
+  # ContainerRestarter (cluster/kubernetesContainerRestarter.ts):
+  # get for getStatus, delete for restart (see its own doc comment on
+  # why "restart a container" means "delete its pod").
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "delete"]
+  # DeploymentScaler (cluster/kubernetesDeploymentScaler.ts): get for
+  # getStatus (reads the full Deployment), patch on the scale
+  # subresource specifically for scale() -- never the whole Deployment.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "xguard-ops.fullname" . }}
+  labels:
+    {{- include "xguard-ops.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "xguard-ops.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "xguard-ops.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
