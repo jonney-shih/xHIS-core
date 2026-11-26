@@ -4224,3 +4224,84 @@ section, written before this package existed). A directory now does.
   week," which `docs/XGUARD_INTEGRATION.md`'s own "Checked, and
   explicitly deferred" section already named as a different, still-open
   gap.
+
+## Resolved: real FHIR `DiagnosticReport` parsing (`@xhis/core`, not a sibling package)
+
+The one piece "Resolved: message-ID idempotency for external protocol
+integration" (above) named and deliberately left alone at the time:
+"nothing about actually parsing HL7v2 segments, FHIR resources, or
+DICOM metadata into `ExternalLabResultMessage`'s shape." A first real
+instance of that now exists — `integration/fhirLabResultAdapter.ts`'s
+`parseFhirDiagnosticReportAsLabResultMessage`, parsing a real FHIR R4
+`DiagnosticReport` resource into the identical `ExternalLabResultMessage`
+shape `ingestExternalLabResult`/`reactToExternalLabResultMessage`
+already consumed — neither of those two functions changed at all.
+
+- **Lives inside `@xhis/core` itself, unlike the K8s and LDAP/AD work
+  above.** Both of those needed a new sibling package because each
+  needed a real runtime dependency (`@kubernetes/client-node`,
+  `ldapts`) — exactly the "distributed/I-O harness" category
+  `@xhis/core`'s zero-dependency guarantee exists to keep out. FHIR
+  resources are plain JSON; reading one's fields needs no client
+  library, no network call, nothing `@xhis/core` doesn't already have.
+  `CLAUDE.md`'s 1st guardrail names this precisely: "FHIR/HL7 ... real
+  wire-format parsing ... belongs in this same layer when it's
+  needed, not on the client" — `integration/`, where
+  `externalLabResultAdapter.ts` already lived. `@xhis/core` gained no
+  new dependency building this.
+- **Deliberately narrow — one real resource shape, not a FHIR
+  library.** Reads exactly six fields: `identifier[0].value` (the
+  report's own business identifier, not its server-assigned `.id`,
+  which isn't guaranteed stable across systems) as `messageControlId`;
+  `basedOn[0].reference`, required to be the standard
+  `"ServiceRequest/<id>"` shape, as `orderId`; `conclusion` as
+  `result`; `effectiveDateTime` (falling back to `issued`) as
+  `resultedAt`; and `status`, which must be `final`/`amended`/
+  `corrected`. Every other shape FHIR allows for the same underlying
+  information — `result[].reference` to separate `Observation`
+  resources instead of `conclusion`, `basedOn[0].identifier` instead
+  of a literal `reference`, a transaction `Bundle` wrapping the
+  resource instead of one already extracted — is explicitly not
+  handled, each independently addable later behind the same
+  `Result`-returning signature without a breaking change.
+- **`status` is a real clinical-safety check, not incidental shape
+  validation.** FHIR's own spec models a report's maturity through
+  this one field; a `preliminary`/`registered`/`partial`/`cancelled`/
+  `entered-in-error` report is refused outright (`ReportNotFinalized`),
+  never silently ingested as if it were authoritative. Nothing
+  downstream of `ExternalLabResultMessage` knows FHIR exists at all —
+  this is the one place in the whole pipeline that could ever catch a
+  non-final result being mistaken for a final one, so it does.
+- **A parse failure never touches the idempotency store or lab state —
+  proven, not just asserted.** `ingestFhirDiagnosticReport` calls the
+  parser first; on failure it returns immediately, before
+  `store.hasProcessed`/`markProcessed` or `labCommitter` are ever
+  touched. `tests/integration/fhirLabResultAdapter.test.ts`'s own test
+  for this confirms the store still reports the message as unprocessed
+  and nothing committed — an unparseable resource was never a message
+  this system could act on, not "processed and rejected."
+- **Idempotency ports through unchanged, using the FHIR resource's own
+  identifier as the dedup key.** A second `ingestFhirDiagnosticReport`
+  call with the byte-identical `DiagnosticReport` resource resolves as
+  `duplicate` via the same `MessageIdempotencyStore` mechanism
+  `externalLabResultAdapter.ts` already had — `fhirLabResultAdapter.ts`
+  adds a parsing step in front of that machinery, not a second copy of
+  it.
+- **Proven, not asserted.** 24 new tests (1 new file), typecheck and
+  lint clean.
+- **What this does not do.** No HL7v2 parsing at all (a different
+  protocol, not attempted here) and no DICOM metadata parsing — both
+  still exactly as open as `docs/DETERMINISTIC_CORE_PATTERN.md`'s
+  earlier entry left them. No FHIR profile/terminology validation
+  (LOINC codes, value-set binding). No `Bundle` unwrapping. No
+  `Observation`-resolution path. No real network transport (receiving
+  an actual FHIR `$process-message` or REST `POST` from a hospital's
+  LIS) — that's the same "network-liveness concerns... still
+  genuinely out of scope" the idempotency entry above already named,
+  unaffected by this slice. No equivalent parser for any other domain
+  (imaging's `DiagnosticReport` variant for imaging studies, pharmacy's
+  `MedicationDispense`, a FHIR `Patient` resource for registration) —
+  this is the first instance of the pattern, not a general FHIR
+  ingestion layer; building the others ahead of a real, stated need for
+  each would be exactly the premature-abstraction mistake this
+  codebase's own history already avoids elsewhere.
